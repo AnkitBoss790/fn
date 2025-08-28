@@ -3,7 +3,6 @@ import json
 import time
 import asyncio
 from typing import Dict, Any, Optional, List
-
 import discord
 from discord.ext import commands
 import requests
@@ -15,16 +14,15 @@ PREFIX = "*"
 BOT_VERSION = "27.6v"
 MADE_BY = "Gamerzhacker"
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "PUT_YOUR_DISCORD_BOT_TOKEN")
-
+TOKEN = ""
 # Pterodactyl Application API (Admin key)
-PANEL_URL = os.getenv("PANEL_URL", "https://panel.example.com")  # no trailing slash
-PANEL_API_KEY = os.getenv("PANEL_API_KEY", "PTRO_APP_KEY")       # Application key (not client key)
-PANEL_NODE_ID = int(os.getenv("PANEL_NODE_ID", "1"))             # default node id
-DEFAULT_ALLOCATION_ID = os.getenv("DEFAULT_ALLOCATION_ID")        # optional fallback
+PANEL_URL = "https://panel.fluidmc.fun/"  # no trailing slash
+PANEL_API_KEY = "ptla_fy1H6oRdi8fNziZhj3Yk7DrOxXDblOHhaikV35ZtvNW"       # Application key (not client key)
+PANEL_NODE_ID = "12"             # default node id
+DEFAULT_ALLOCATION_ID = "23"        # optional fallback
 
 # Optional: CDN image for *plans (your screenshot URL)
-PLANS_IMAGE_URL = os.getenv("PLANS_IMAGE_URL", "")
+PLANS_IMAGE_URL = ""
 
 # File to persist data
 DATA_FILE = "data.json"
