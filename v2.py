@@ -1,831 +1,770 @@
 import os
 import json
 import time
+import requests
 import asyncio
 from typing import Dict, Any, Optional, List
 import discord
 from discord.ext import commands
-import requests
 
-# -----------------------------
-# CONFIG
-# -----------------------------
-PREFIX = "*"
+# =======================
+# CONFIG — EDIT THESE
+# =======================
+BOT_TOKEN = ""
+PANEL_URL = "https://panel.fluidmc.fun"
+PANEL_API_KEY = "ptla_fy1H6oRdi8fNziZhj3Yk7DrOxXDblOHhaikV35ZtvNW"
+PANEL_NODE_ID = "12"
+DEFAULT_ALLOCATION_ID = "23"
+# Admin role names or IDs that should be allowed (role names; you can also use data["admins"])
+ADMIN_ROLE_NAMES = {"Admin", "Owner", "Management"}
+
+# Bot branding
 BOT_VERSION = "27.6v"
 MADE_BY = "Gamerzhacker"
+SERVER_LOCATION = "India"
+PLANS_IMAGE_URL = ""  # optional image url used in *plans
 
-TOKEN = ""
-# Pterodactyl Application API (Admin key)
-PANEL_URL = "https://panel.fluidmc.fun/"  # no trailing slash
-PANEL_API_KEY = "ptla_fy1H6oRdi8fNziZhj3Yk7DrOxXDblOHhaikV35ZtvNW"       # Application key (not client key)
-PANEL_NODE_ID = "12"             # default node id
-DEFAULT_ALLOCATION_ID = "23"        # optional fallback
+# Files
+DATA_FILE = "v2_data.json"
 
-# Optional: CDN image for *plans (your screenshot URL)
-PLANS_IMAGE_URL = ""
-
-# File to persist data
-DATA_FILE = "data.json"
-
-# Roles required to use admin commands (IDs or names)
-ADMIN_ROLE_NAMES = {"Admin", "Owner", "Management", "Node"}
-
-# Invite tiers (from your screenshots)
-TIERS = [
-    {"name": "Basic",    "inv": 0,  "ram": 4096,  "cpu": 150, "disk": 10000},
-    {"name": "Advanced", "inv": 4,  "ram": 6144,  "cpu": 200, "disk": 15000},
-    {"name": "Pro",      "inv": 6,  "ram": 7168,  "cpu": 230, "disk": 20000},
-    {"name": "Premium",  "inv": 8,  "ram": 9216,  "cpu": 270, "disk": 25000},
-    {"name": "Elite",    "inv": 15, "ram": 12288, "cpu": 320, "disk": 30000},
-    {"name": "Ultimate", "inv": 20, "ram": 16384, "cpu": 400, "disk": 35000},
-]
-
-# -----------------------------
-# Extended Egg Catalog (adjust IDs & startup for your panel eggs)
-# -----------------------------
-EGG_CATALOG: Dict[str, Dict[str, Any]] = {
-    # Minecraft family
-    "minecraft_paper": {
-        "display": "Minecraft: Paper",
-        "nest_id": 1,
-        "egg_id": 1,
-        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
-        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}",
-        "environment": {
-            "SERVER_JARFILE": "server.jar",
-            "BUILD_NUMBER": "1",
-            "VERSION": "latest",
-            "EULA": "TRUE"
-        }
-    },
-    "minecraft_vanilla": {
-        "display": "Minecraft: Vanilla",
-        "nest_id": 1,
-        "egg_id": 2,
-        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
-        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar",
-        "environment": {"EULA": "TRUE", "BUILD_NUMBER": "1"}
-    },
-    "minecraft_forge": {
-        "display": "Minecraft: Forge",
-        "nest_id": 1,
-        "egg_id": 3,
-        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
-        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar forge-{{VERSION}}.jar",
-        "environment": {"SERVER_JARFILE": "server.jar", "VERSION": "1.20.1", "BUILD_NUMBER": "1", "EULA": "TRUE"}
-    },
-    "minecraft_fabric": {
-        "display": "Minecraft: Fabric",
-        "nest_id": 1,
-        "egg_id": 4,
-        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
-        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar fabric-server-launch.jar",
-        "environment": {"EULA": "TRUE", "BUILD_NUMBER": "1"}
-    },
-    "minecraft_bungeecord": {
-        "display": "Minecraft: Bungeecord",
-        "nest_id": 2,
-        "egg_id": 5,
-        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
-        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar BungeeCord.jar",
-        "environment": {"BUILD_NUMBER": "1"}
-    },
-    "minecraft_waterfall": {
-        "display": "Minecraft: Waterfall",
-        "nest_id": 2,
-        "egg_id": 6,
-        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
-        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar Waterfall.jar",
-        "environment": {"BUILD_NUMBER": "1"}
-    },
-    # Apps
-    "nodejs": {
-        "display": "Node.js App",
-        "nest_id": 5,
-        "egg_id": 7,
-        "docker_image": "ghcr.io/pterodactyl/yolks:nodejs_18",
-        "startup": "npm start",
-        "environment": {"STARTUP_FILE": "index.js"}
-    },
-    "python": {
-        "display": "Python App",
-        "nest_id": 5,
-        "egg_id": 8,
-        "docker_image": "ghcr.io/pterodactyl/yolks:python_3.11",
-        "startup": "python3 main.py",
-        "environment": {"STARTUP_FILE": "main.py"}
-    },
-    # Popular games
-    "fivem": {
-        "display": "GTA FiveM",
-        "nest_id": 3,
-        "egg_id": 9,
-        "docker_image": "ghcr.io/pterodactyl/yolks:debian",
-        "startup": "./run.sh +exec server.cfg",
-        "environment": {"BUILD_NUMBER": "1"}
-    },
-    "rust": {
-        "display": "Rust Server",
-        "nest_id": 4,
-        "egg_id": 10,
-        "docker_image": "ghcr.io/pterodactyl/yolks:debian",
-        "startup": "./RustDedicated -batchmode -nographics -server.ip 0.0.0.0 -server.port {{SERVER_PORT}}",
-        "environment": {}
-    },
-    "csgo": {
-        "display": "CS:GO Server",
-        "nest_id": 4,
-        "egg_id": 11,
-        "docker_image": "ghcr.io/pterodactyl/yolks:debian",
-        "startup": "./srcds_run -game csgo -console -port {{SERVER_PORT}} +map de_dust2",
-        "environment": {}
-    },
-    # Databases
-    "mariadb": {
-        "display": "MariaDB",
-        "nest_id": 7,
-        "egg_id": 12,
-        "docker_image": "ghcr.io/pterodactyl/yolks:debian",
-        "startup": "mysqld --defaults-file=/mnt/server/my.cnf",
-        "environment": {"MYSQL_ROOT_PASSWORD": "root"}
-    },
-    "redis": {
-        "display": "Redis",
-        "nest_id": 7,
-        "egg_id": 13,
-        "docker_image": "ghcr.io/pterodactyl/yolks:debian",
-        "startup": "redis-server /mnt/server/redis.conf",
-        "environment": {}
-    },
-}
-
-# -----------------------------
-# Persistence helpers
-# -----------------------------
-
-def load_data() -> Dict[str, Any]:
-    if not os.path.exists(DATA_FILE):
-        return {"admins": [], "invites": {}, "panel_users": {}, "user_client_keys": {}}
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_data(data: Dict[str, Any]):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-
-
-data = load_data()
-
-# -----------------------------
-# Discord bot
-# -----------------------------
+# Prefix and intents
+PREFIX = "*"
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-
 bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
 
-# -----------------------------
-# Utils
-# -----------------------------
+# =======================
+# Persistence: load/save data
+# =======================
+def load_data() -> Dict[str, Any]:
+    if not os.path.exists(DATA_FILE):
+        return {"admins": [], "invites": {}, "panel_users": {}, "client_keys": {}}
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-HEADERS_APP = {"Authorization": f"Bearer {PANEL_API_KEY}", "Accept": "Application/vnd.pterodactyl.v1+json", "Content-Type": "application/json"}
+def save_data(d: Dict[str, Any]):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(d, f, indent=2)
 
+data = load_data()
+
+# =======================
+# Panel helpers (Application API)
+# =======================
+APP_HEADERS = {
+    "Authorization": f"Bearer {PANEL_API_KEY}",
+    "Content-Type": "application/json",
+    "Accept": "application/vnd.pterodactyl.v1+json",
+}
 
 def app_url(path: str) -> str:
     return f"{PANEL_URL}/api/application{path}"
 
+def app_get(path: str, params: dict = None, timeout=20) -> requests.Response:
+    return requests.get(app_url(path), headers=APP_HEADERS, params=params or {}, timeout=timeout)
 
-def client_url(path: str) -> str:
-    return f"{PANEL_URL}/api/client{path}"
+def app_post(path: str, payload: dict, timeout=60) -> requests.Response:
+    return requests.post(app_url(path), headers=APP_HEADERS, json=payload, timeout=timeout)
 
+def app_delete(path: str, timeout=30) -> requests.Response:
+    return requests.delete(app_url(path), headers=APP_HEADERS, timeout=timeout)
 
-def is_admin(member: discord.Member) -> bool:
-    if member.guild_permissions.administrator:
-        return True
-    names = {r.name for r in getattr(member, 'roles', [])}
-    return any(n in names for n in ADMIN_ROLE_NAMES) or (str(member.id) in data.get("admins", []))
-
-
-async def ask(ctx: commands.Context, prompt: str, timeout: int = 45, check_numeric: bool = False, min_val: Optional[int] = None, max_val: Optional[int] = None) -> Optional[str]:
-    await ctx.send(prompt)
-    def _check(m: discord.Message):
-        return m.author.id == ctx.author.id and m.channel.id == ctx.channel.id
-    try:
-        msg = await bot.wait_for("message", check=_check, timeout=timeout)
-        content = msg.content.strip()
-        if check_numeric:
-            if not content.isdigit():
-                await ctx.send("Please send a number.")
-                return None
-            val = int(content)
-            if min_val is not None and val < min_val:
-                await ctx.send(f"Minimum is {min_val}.")
-                return None
-            if max_val is not None and val > max_val:
-                await ctx.send(f"Maximum is {max_val}.")
-                return None
-        return content
-    except asyncio.TimeoutError:
-        await ctx.send("Timed out. Try again.")
-        return None
-
-# -----------------------------
-# Pterodactyl API helpers
-# -----------------------------
-
+# Get free allocation on a node (returns allocation id or None)
 def get_free_allocation(node_id: int) -> Optional[int]:
     try:
-        r = requests.get(app_url(f"/nodes/{node_id}/allocations"), headers=HEADERS_APP, timeout=20)
+        r = app_get(f"/nodes/{node_id}/allocations")
         r.raise_for_status()
-        dataj = r.json()
-        # v1 returns list under data -> attributes
-        for item in dataj.get("data", []):
+        for item in r.json().get("data", []):
             attr = item.get("attributes", {})
+            # Unassigned allocations often have "assigned": False
             if not attr.get("assigned", False):
-                return int(attr["id"])
+                # attr id is the allocation record id; some panels expect allocation id or dict — we use id from panel's attributes.id
+                return int(attr.get("id"))
         return None
     except Exception:
         return None
 
+# Lookup panel user id by email (Application API)
+def get_panel_user_id_by_email(email: str) -> Optional[int]:
+    try:
+        r = app_get("/users")
+        if r.status_code != 200:
+            return None
+        for item in r.json().get("data", []):
+            attr = item.get("attributes", {})
+            if attr.get("email", "").lower() == email.lower():
+                return int(attr.get("id"))
+        return None
+    except Exception:
+        return None
 
-def create_panel_user(username: str, email: str, first_name: str = "User", last_name: str = "Bot") -> Optional[int]:
+# Create panel user (Application API)
+def create_panel_user(email: str, username: str, password: Optional[str] = None, first_name: str = "Discord", last_name: str = "User") -> Optional[int]:
     payload = {
         "email": email,
         "username": username,
         "first_name": first_name,
         "last_name": last_name,
-        "password": None
+        # Panel sometimes requires password or generates one — pass None if API allows it
     }
+    if password:
+        payload["password"] = password
     try:
-        r = requests.post(app_url("/users"), headers=HEADERS_APP, json=payload, timeout=30)
-        if r.status_code == 422 and "email" in r.text:
-            # already exists, fetch id
-            u = requests.get(app_url(f"/users?filter[email]={email}"), headers=HEADERS_APP, timeout=20)
-            if u.ok and u.json().get("data"):
-                return u.json()["data"][0]["attributes"]["id"]
-        r.raise_for_status()
-        return r.json()["attributes"]["id"]
-    except Exception as e:
-        print("create_user error", e)
+        r = app_post("/users", payload)
+        # If created, panel returns 201/200
+        if r.status_code in (200, 201):
+            return int(r.json().get("attributes", {}).get("id"))
+        # If already exists, try to query by filter
+        if r.status_code == 422:
+            rr = app_get("/users", params={"filter[email]": email})
+            if rr.ok and rr.json().get("data"):
+                return int(rr.json()["data"][0]["attributes"]["id"])
+        return None
+    except Exception:
         return None
 
-
+# Delete panel user id (Application API)
 def delete_panel_user(user_id: int) -> bool:
     try:
-        r = requests.delete(app_url(f"/users/{user_id}"), headers=HEADERS_APP, timeout=20)
-        return r.status_code in (204, 200)
+        r = app_delete(f"/users/{user_id}")
+        return r.status_code in (200, 204)
     except Exception:
         return False
 
+# Delete server (Application API)
+def delete_panel_server(server_id: int) -> bool:
+    try:
+        r = app_delete(f"/servers/{server_id}")
+        return r.status_code in (200, 204)
+    except Exception:
+        return False
 
-def create_server(name: str, owner_id: int, egg_key: str, memory: int, cpu: int, disk: int, allocation_id: Optional[int]) -> Optional[str]:
-    egg = EGG_CATALOG[egg_key]
-    # If allocation not provided, attempt auto-pick
-    if allocation_id is None:
-        allocation_id = get_free_allocation(PANEL_NODE_ID)
-    if allocation_id is None and DEFAULT_ALLOCATION_ID:
-        allocation_id = int(DEFAULT_ALLOCATION_ID)
+# List servers (Application API) — returns list of dicts with attributes
+def list_panel_servers() -> List[Dict[str, Any]]:
+    try:
+        r = app_get("/servers")
+        if not r.ok:
+            return []
+        out = []
+        for d in r.json().get("data", []):
+            a = d.get("attributes", {})
+            out.append({"id": a.get("id"), "name": a.get("name"), "identifier": a.get("identifier"), "limits": a.get("limits", {})})
+        return out
+    except Exception:
+        return []
+
+# =======================
+# Default env + Egg catalog
+# =======================
+DEFAULT_ENV = {
+    "SERVER_JARFILE": "server.jar",
+    "EULA": "TRUE",
+    "VERSION": "latest",
+    "BUILD_NUMBER": "1",
+    "SPONGE_VERSION": "stable-7",
+    "FORGE_VERSION": "latest",
+    "MINECRAFT_VERSION": "latest"
+}
+
+# NOTE: Replace egg_id / nest_id / docker_image / startup for your real panel eggs if different.
+EGG_CATALOG: Dict[str, Dict[str, Any]] = {
+    "paper": {
+        "display": "Minecraft: Paper",
+        "nest_id": 1,
+        "egg_id": 3,  # your paper egg ID (you said paper egg is 3)
+        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
+        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui",
+        "environment": {"SERVER_JARFILE": "server.jar", "EULA": "TRUE", "BUILD_NUMBER": "1"}
+    },
+    "vanilla": {
+        "display": "Minecraft: Vanilla",
+        "nest_id": 1,
+        "egg_id": 1,
+        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
+        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar nogui",
+        "environment": {"SERVER_JARFILE": "server.jar", "EULA": "TRUE"}
+    },
+    "forge": {
+        "display": "Minecraft: Forge",
+        "nest_id": 1,
+        "egg_id": 4,
+        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
+        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui",
+        "environment": {"SERVER_JARFILE": "forge.jar", "FORGE_VERSION": "latest", "MINECRAFT_VERSION": "latest"}
+    },
+    "sponge": {
+        "display": "Minecraft: Sponge",
+        "nest_id": 1,
+        "egg_id": 6,
+        "docker_image": "ghcr.io/pterodactyl/yolks:java_11",
+        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui",
+        "environment": {"SERVER_JARFILE": "sponge.jar", "SPONGE_VERSION": "stable-7", "MINECRAFT_VERSION": "1.12.2"}
+    },
+    "nodejs": {
+        "display": "Node.js App",
+        "nest_id": 5,
+        "egg_id": 16,
+        "docker_image": "ghcr.io/pterodactyl/yolks:nodejs_18",
+        "startup": "node index.js",
+        "environment": {"STARTUP_FILE": "index.js"}
+    },
+    "python": {
+        "display": "Python App",
+        "nest_id": 5,
+        "egg_id": 17,
+        "docker_image": "ghcr.io/pterodactyl/yolks:python_3.11",
+        "startup": "python3 main.py",
+        "environment": {"STARTUP_FILE": "main.py"}
+    },
+    "fivem": {
+        "display": "GTA FiveM",
+        "nest_id": 3,
+        "egg_id": 18,
+        "docker_image": "ghcr.io/pterodactyl/yolks:debian",
+        "startup": "./run.sh +exec server.cfg",
+        "environment": {"SERVER_JARFILE": "server.cfg"}
+    },
+    "rust": {
+        "display": "Rust",
+        "nest_id": 4,
+        "egg_id": 19,
+        "docker_image": "ghcr.io/pterodactyl/yolks:debian",
+        "startup": "./RustDedicated -batchmode -nographics -server.ip 0.0.0.0 -server.port {{SERVER_PORT}}",
+        "environment": {}
+    },
+    "mariadb": {
+        "display": "MariaDB",
+        "nest_id": 7,
+        "egg_id": 20,
+        "docker_image": "ghcr.io/pterodactyl/yolks:debian",
+        "startup": "mysqld --defaults-file=/mnt/server/my.cnf",
+        "environment": {"MYSQL_ROOT_PASSWORD": "root"}
+    }
+}
+
+# Helper to pretty list eggs
+def egg_list_text() -> str:
+    lines = []
+    for idx, (key, val) in enumerate(EGG_CATALOG.items(), start=1):
+        lines.append(f"{idx}. {val['display']} (`{key}`)")
+    return "\n".join(lines)
+
+# =======================
+# Admin check helpers
+# =======================
+def is_requester_admin_member(member: discord.Member) -> bool:
+    # Server admin permission
+    try:
+        if getattr(member, "guild_permissions", None) and member.guild_permissions.administrator:
+            return True
+    except Exception:
+        pass
+    # Role name match
+    try:
+        names = {r.name for r in getattr(member, "roles", [])}
+        if ADMIN_ROLE_NAMES.intersection(names):
+            return True
+    except Exception:
+        pass
+    # Stored IDs in data
+    if str(member.id) in set(data.get("admins", [])):
+        return True
+    return False
+
+async def require_admin_ctx(ctx: commands.Context) -> bool:
+    if not is_requester_admin_member(ctx.author):
+        await ctx.reply("🔒 You are not authorized to use admin commands.")
+        return False
+    return True
+
+# =======================
+# Utility: merge env defaults
+# =======================
+def build_env_for_egg(egg_key: str) -> Dict[str, Any]:
+    env = {}
+    env.update(DEFAULT_ENV)
+    egg_env = EGG_CATALOG.get(egg_key, {}).get("environment", {})
+    env.update(egg_env)
+    # Ensure minimal defaults
+    required_defaults = {
+        "BUILD_NUMBER": "1",
+        "SERVER_JARFILE": "server.jar",
+        "EULA": "TRUE",
+        "VERSION": "latest",
+        "SPONGE_VERSION": "stable-7",
+        "FORGE_VERSION": "latest",
+        "MINECRAFT_VERSION": "latest"
+    }
+    for k, v in required_defaults.items():
+        if env.get(k) in (None, ""):
+            env[k] = v
+    return env
+
+# =======================
+# Core server create function (used by *create and admin create)
+# =======================
+def panel_create_server(name: str, owner_panel_id: int, egg_key: str, memory: int, cpu: int, disk: int, allocation_id: Optional[int] = None) -> Dict[str, Any]:
+    if egg_key not in EGG_CATALOG:
+        raise ValueError("Unknown egg key")
+    egg_def = EGG_CATALOG[egg_key]
+
+    # pick allocation if not provided
+    alloc = allocation_id
+    if not alloc:
+        alloc = get_free_allocation(PANEL_NODE_ID)
+    if not alloc and DEFAULT_ALLOCATION_ID:
+        try:
+            alloc = int(DEFAULT_ALLOCATION_ID)
+        except Exception:
+            alloc = None
+
+    if not alloc:
+        raise RuntimeError("No free allocation on node and no DEFAULT_ALLOCATION_ID set")
+
+    env = build_env_for_egg(egg_key)
 
     payload = {
         "name": name,
-        "user": owner_id,
-        "nest": egg["nest_id"],
-        "egg": egg["egg_id"],
-        "docker_image": egg["docker_image"],
-        "startup": egg["startup"],
+        "user": owner_panel_id,
+        "nest": egg_def["nest_id"],
+        "egg": egg_def["egg_id"],
+        "docker_image": egg_def["docker_image"],
+        "startup": egg_def["startup"],
         "limits": {"memory": memory, "swap": 0, "disk": disk, "io": 500, "cpu": cpu},
         "feature_limits": {"databases": 1, "allocations": 1, "backups": 1},
-        "allocation": {"default": allocation_id},
-        "environment": egg.get("environment", {})
+        "allocation": {"default": alloc},
+        "environment": env
     }
 
-    r = requests.post(app_url("/servers"), headers=HEADERS_APP, json=payload, timeout=60)
+    r = app_post("/servers", payload)
     if not r.ok:
+        # raise with body for debugging
         raise RuntimeError(f"Panel error {r.status_code}: {r.text}")
-    return r.json()["attributes"]["identifier"]
+    return r.json()
 
-
-def delete_server(server_id: int) -> bool:
-    try:
-        r = requests.delete(app_url(f"/servers/{server_id}"), headers=HEADERS_APP, timeout=25)
-        return r.status_code in (204, 200)
-    except Exception:
-        return False
-
-
-def list_servers() -> List[Dict[str, Any]]:
-    r = requests.get(app_url("/servers"), headers=HEADERS_APP, timeout=30)
-    if not r.ok:
-        return []
-    out = []
-    for d in r.json().get("data", []):
-        a = d.get("attributes", {})
-        out.append({
-            "id": a.get("id"),
-            "name": a.get("name"),
-            "identifier": a.get("identifier"),
-            "limits": a.get("limits", {})
-        })
-    return out
-
-# -----------------------------
-# Command Helpers
-# -----------------------------
-
-def get_user_invites(uid: int) -> int:
-    return int(data.get("invites", {}).get(str(uid), 0))
-
-
-def set_user_invites(uid: int, amount: int):
-    data.setdefault("invites", {})[str(uid)] = int(amount)
-    save_data(data)
-
-
-def add_user_invites(uid: int, amount: int):
-    set_user_invites(uid, get_user_invites(uid) + int(amount))
-
-
-def remove_user_invites(uid: int, amount: int):
-    set_user_invites(uid, max(0, get_user_invites(uid) - int(amount)))
-
-
-def tier_for_invites(inv_count: int) -> Dict[str, Any]:
-    best = TIERS[0]
-    for t in TIERS:
-        if inv_count >= t["inv"]:
-            best = t
-    return best
-
-# -----------------------------
-# EVENTS
-# -----------------------------
-
+# =======================
+# Commands
+# =======================
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} | Prefix: {PREFIX}")
     await bot.change_presence(activity=discord.Game(name=f"{PREFIX}help | {BOT_VERSION}"))
 
-# -----------------------------
 # HELP
-# -----------------------------
-
 @bot.command(name="help")
-async def _help(ctx: commands.Context):
-    em = discord.Embed(title="Pterodactyl Manager — Help", color=discord.Color.blurple())
+async def help_cmd(ctx: commands.Context):
+    em = discord.Embed(title="Bot Help", color=discord.Color.blurple())
     em.description = (
-        "**User Commands**\n"
-        f"`{PREFIX}plans` – Show invite/boost plans.\n"
-        f"`{PREFIX}i [@user]` – Show your/other invites & tier.\n"
-        f"`{PREFIX}register` – Link or create your panel account.\n"
-        f"`{PREFIX}create` – Create a server (RAM/CPU/Disk only).\n"
-        f"`{PREFIX}upgrade` – Show current tier limits.\n"
-        f"`{PREFIX}manage` – Manage using your client API key (power, files, IP, SFTP).\n"
-        f"`{PREFIX}serverinfo` – Show this Discord server info.\n"
-        f"`{PREFIX}botinfo` – Bot version & credits.\n"
-        f"`{PREFIX}clear <amount>` – Clear messages (needs Manage Msgs).\n\n"
-        "**Admin Commands**\n"
-        f"`{PREFIX}admin add_i @user <amount>` – Add invites.\n"
-        f"`{PREFIX}admin remove_i @user <amount>` – Remove invites.\n"
-        f"`{PREFIX}admin add_a @user` – Add as bot admin.\n"
-        f"`{PREFIX}admin rm_a @user` – Remove admin.\n"
-        f"`{PREFIX}admin create_a @user <email>` – Create/link panel account.\n"
-        f"`{PREFIX}admin rm_ac @user` – Delete user's panel account & servers.\n"
-        f"`{PREFIX}admin create_s <name> <owner_email>` – Create server via prompts.\n"
-        f"`{PREFIX}admin delete_s <server_id>` – Delete server.\n"
-        f"`{PREFIX}admin serverlist` – List servers with limits.\n"
-        f"`{PREFIX}admin newmsg <channel_id> <text>` – Send custom message.\n"
-        f"`{PREFIX}admin lock` / `{PREFIX}admin unlock` – Lock/Unlock channel.\n"
-        f"`{PREFIX}node` – Show node allocation status.\n"
+        f"Prefix `{PREFIX}` commands — Panel: {PANEL_URL}\n\n"
+        "**User:**\n"
+        f"`{PREFIX}plans` — show invite plans\n"
+        f"`{PREFIX}i [@user]` — show invites/tier\n"
+        f"`{PREFIX}register <email> <password>` — link/create panel account\n"
+        f"`{PREFIX}create` — interactive create (select egg, give RAM/CPU/DISK)\n"
+        f"`{PREFIX}manage` — manage a server using your client API key\n"
+        "\n**Admin:**\n"
+        f"`{PREFIX}admin add_i @user <amount>` — add invites\n"
+        f"`{PREFIX}admin remove_i @user <amount>` — remove invites\n"
+        f"`{PREFIX}admin add_a @user` — add bot admin\n"
+        f"`{PREFIX}admin rm_a @user` — remove bot admin\n"
+        f"`{PREFIX}admin create_a @user <email> <password>` — create panel user and link\n"
+        f"`{PREFIX}admin create_s <owner_email> <egg_key> <name> <ram> <cpu> <disk>` — create server\n"
+        f"`{PREFIX}admin delete_s <server_id>` — delete server\n"
+        f"`{PREFIX}admin serverlist` — list servers\n"
+        f"`{PREFIX}admin newmsg <channel_id> <text>` — broadcast\n"
+        f"`{PREFIX}admin lock` / `{PREFIX}admin unlock` — lock/unlock current channel\n"
+        f"`{PREFIX}clear <amount>` — purge messages\n"
     )
-    await ctx.send(embed=em)
+    await ctx.reply(embed=em)
 
-# -----------------------------
-# PLANS & INVITES
-# -----------------------------
-
-@bot.command()
-async def plans(ctx: commands.Context):
-    em = discord.Embed(title="Free Plans", color=discord.Color.gold())
-    desc = []
-    for t in TIERS[1:]:
-        desc.append(f"**{t['inv']} Invites**\nRAM: {t['ram']//1024 if t['ram']>=1024 else t['ram']} {'GB' if t['ram']>=1024 else 'MB'}\nCPU: {t['cpu']}%\nDisk: {t['disk']//1000} GB\nRole: {t['name']}")
-    em.description = "\n\n".join(desc)
+# PLANS
+@bot.command(name="plans")
+async def plans_cmd(ctx: commands.Context):
+    em = discord.Embed(title="Invite Plans", color=discord.Color.gold())
+    lines = []
+    for t in [
+        {"name": "Basic", "inv": 0, "ram": 4096, "cpu": 150, "disk": 10000},
+        {"name": "Advanced", "inv": 4, "ram": 6144, "cpu": 200, "disk": 15000},
+        {"name": "Pro", "inv": 6, "ram": 7168, "cpu": 230, "disk": 20000},
+        {"name": "Premium", "inv": 8, "ram": 9216, "cpu": 270, "disk": 25000},
+        {"name": "Elite", "inv": 15, "ram": 12288, "cpu": 320, "disk": 30000},
+        {"name": "Ultimate", "inv": 20, "ram": 16384, "cpu": 400, "disk": 35000},
+    ]:
+        lines.append(f"**{t['name']}** — at {t['inv']} invites\nRAM {t['ram']}MB | CPU {t['cpu']}% | Disk {t['disk']}MB")
+    em.description = "\n\n".join(lines)
     if PLANS_IMAGE_URL:
         em.set_image(url=PLANS_IMAGE_URL)
-    await ctx.send(embed=em)
+    await ctx.reply(embed=em)
 
+# INVITES info
 @bot.command(name="i")
 async def invites_cmd(ctx: commands.Context, member: Optional[discord.Member] = None):
-    member = member or ctx.author
-    inv = get_user_invites(member.id)
-    tier = tier_for_invites(inv)
-    em = discord.Embed(title=f"Invite Stats – {member.display_name}", color=discord.Color.teal())
-    em.add_field(name="Total Invites", value=str(inv))
-    em.add_field(name="Current Tier", value=tier['name'])
-    em.add_field(name="Next Tier", value=f"{tier['name']}" if tier==TIERS[-1] else f"{[t for t in TIERS if t['inv']>tier['inv']][0]['name']} at {[t for t in TIERS if t['inv']>tier['inv']][0]['inv']} invites")
-    em.add_field(name="RAM", value=f"{tier['ram']//1024 if tier['ram']>=1024 else tier['ram']} {'GB' if tier['ram']>=1024 else 'MB'}")
-    em.add_field(name="CPU", value=f"{tier['cpu']}%")
-    em.add_field(name="Disk", value=f"{tier['disk']//1000} GB")
-    await ctx.send(embed=em)
+    target = member or ctx.author
+    invites = int(data.get("invites", {}).get(str(target.id), 0))
+    # choose tier
+    tier = None
+    for t in [{"name":"Basic","inv":0},{"name":"Advanced","inv":4},{"name":"Pro","inv":6},{"name":"Premium","inv":8},{"name":"Elite","inv":15},{"name":"Ultimate","inv":20}]:
+        if invites >= t["inv"]:
+            tier = t
+    em = discord.Embed(title=f"Invites — {target.display_name}", color=discord.Color.blue())
+    em.add_field(name="Total invites", value=str(invites))
+    em.add_field(name="Tier", value=tier["name"] if tier else "Basic")
+    await ctx.reply(embed=em)
 
-@bot.command()
-async def upgrade(ctx: commands.Context):
-    inv = get_user_invites(ctx.author.id)
-    tier = tier_for_invites(inv)
-    em = discord.Embed(title="Your Tier Benefits", color=discord.Color.green())
-    em.add_field(name="Tier", value=tier['name'])
-    em.add_field(name="RAM", value=f"{tier['ram']//1024 if tier['ram']>=1024 else tier['ram']} {'GB' if tier['ram']>=1024 else 'MB'}")
-    em.add_field(name="CPU", value=f"{tier['cpu']}%")
-    em.add_field(name="Disk", value=f"{tier['disk']//1000} GB")
-    await ctx.send(embed=em)
-
-# -----------------------------
-# REGISTER / PANEL ACCOUNT LINK
-# -----------------------------
-
-@bot.command()
-async def register(ctx: commands.Context):
-    """User links (or creates) panel account under their Discord user."""
-    user_id = str(ctx.author.id)
-    if user_id in data.get("panel_users", {}):
-        await ctx.send(f"Already linked: `{data['panel_users'][user_id]}`")
+# REGISTER (create or link panel user)
+@bot.command(name="register")
+async def register_cmd(ctx: commands.Context, email: str, password: str):
+    # If already linked, tell
+    uid = data.get("panel_users", {}).get(str(ctx.author.id))
+    if uid:
+        await ctx.reply("You already have a linked panel user.")
         return
-    email = await ask(ctx, "Enter your panel email:")
-    if not email:
+    # create or fetch
+    created_id = create_panel_user(email, username=f"u{ctx.author.id}", password=password, first_name=ctx.author.name, last_name="Discord")
+    if not created_id:
+        await ctx.reply("Failed to create or find panel user. Ask admin.")
         return
-    username = f"user{ctx.author.id}"[:24]
-    uid = create_panel_user(username=username, email=email, first_name=ctx.author.display_name[:20], last_name="Discord")
-    if not uid:
-        await ctx.send("Failed to create/link panel user. Ask admin.")
-        return
-    data.setdefault("panel_users", {})[user_id] = uid
+    data.setdefault("panel_users", {})[str(ctx.author.id)] = created_id
     save_data(data)
-    await ctx.send(f"Linked! Panel user id: `{uid}`")
+    await ctx.reply(f"Linked panel user id `{created_id}` to your Discord account.")
 
-# -----------------------------
-# CREATE (Interactive) — RAM/CPU/DISK ONLY
-# -----------------------------
-
-@bot.command()
-async def create(ctx: commands.Context):
-    # Ensure user has panel account
-    user_id = str(ctx.author.id)
-    if user_id not in data.get("panel_users", {}):
-        await ctx.send(f"Use `{PREFIX}register` first to link your panel account.")
+# INTERACTIVE create — choose egg, limits only
+@bot.command(name="create")
+async def create_interactive(ctx: commands.Context):
+    uid = data.get("panel_users", {}).get(str(ctx.author.id))
+    if not uid:
+        await ctx.reply(f"Register first with `{PREFIX}register <email> <password>` or ask admin to link an account.")
         return
-    owner_id = data["panel_users"][user_id]
-
-    # Choose Egg
-    keys = list(EGG_CATALOG.keys())
-    menu = "\n".join([f"{i+1}. {EGG_CATALOG[k]['display']}" for i, k in enumerate(keys)])
-    choice = await ask(ctx, f"Select server type:\n{menu}\n\nReply with number (1-{len(keys)})", check_numeric=True, min_val=1, max_val=len(keys))
-    if not choice:
-        return
-    egg_key = keys[int(choice) - 1]
-
-    # Server name
-    name = await ask(ctx, "Enter Server Name (max 40 chars):")
-    if not name:
-        return
-    name = name[:40]
-
-    # Limits from user's tier
-    user_inv = get_user_invites(ctx.author.id)
-    tier = tier_for_invites(user_inv)
-
-    max_ram = tier['ram']  # in MB
-    max_cpu = tier['cpu']  # %
-    max_disk = tier['disk']  # in MB
-
-    ram = await ask(ctx, f"Enter RAM MB (max {max_ram}):", check_numeric=True, min_val=256, max_val=max_ram)
-    if not ram:
-        return
-    cpu = await ask(ctx, f"Enter CPU % (max {max_cpu}):", check_numeric=True, min_val=10, max_val=max_cpu)
-    if not cpu:
-        return
-    disk = await ask(ctx, f"Enter Disk MB (min 1000, max {max_disk}):", check_numeric=True, min_val=1000, max_val=max_disk)
-    if not disk:
-        return
-
-    await ctx.send("Finding free allocation…")
-    alloc_id = get_free_allocation(PANEL_NODE_ID)
-    if not alloc_id and DEFAULT_ALLOCATION_ID:
-        alloc_id = int(DEFAULT_ALLOCATION_ID)
-    if not alloc_id:
-        await ctx.send("No free allocation found on node. Ask admin to add ports.")
-        return
-
+    # show eggs
+    menu = egg_list_text()
+    await ctx.send("Select egg by typing its key (example: `paper`, `forge`, `nodejs`):\n" + menu)
+    def check(m):
+        return m.author.id == ctx.author.id and m.channel.id == ctx.channel.id
     try:
-        identifier = create_server(
-            name=name,
-            owner_id=owner_id,
-            egg_key=egg_key,
-            memory=int(ram), cpu=int(cpu), disk=int(disk),
-            allocation_id=alloc_id
-        )
-    except Exception as e:
-        await ctx.send(f"❌ Panel error: `{e}`")
+        msg = await bot.wait_for("message", timeout=60, check=check)
+        egg_key = msg.content.strip().lower()
+        if egg_key not in EGG_CATALOG:
+            await ctx.send("Invalid egg key.")
+            return
+        # prompt for name, ram, cpu, disk
+        await ctx.send("Enter server name:")
+        msg = await bot.wait_for("message", timeout=60, check=check)
+        name = msg.content.strip()[:40]
+        await ctx.send("Enter RAM in MB (e.g., 4096):")
+        msg = await bot.wait_for("message", timeout=60, check=check)
+        ram = int(msg.content.strip())
+        await ctx.send("Enter CPU (percentage or integer):")
+        msg = await bot.wait_for("message", timeout=60, check=check)
+        cpu = int(msg.content.strip())
+        await ctx.send("Enter disk in MB (e.g., 20000):")
+        msg = await bot.wait_for("message", timeout=60, check=check)
+        disk = int(msg.content.strip())
+    except asyncio.TimeoutError:
+        await ctx.send("Timed out. Try again.")
         return
+    await ctx.send("Creating server... (this may take a few seconds)")
+    try:
+        result = panel_create_server(name=name, owner_panel_id=uid, egg_key=egg_key, memory=ram, cpu=cpu, disk=disk)
+        # result is JSON from panel
+        identifier = result.get("attributes", {}).get("identifier")
+        await ctx.send(f"✅ Server creation queued. Identifier: `{identifier}`. Check panel for status.")
+    except Exception as e:
+        await ctx.send(f"❌ Error creating server: {e}")
 
-    em = discord.Embed(title="Server created!", color=discord.Color.green())
-    em.add_field(name="Name", value=name, inline=False)
-    em.add_field(name="Egg", value=EGG_CATALOG[egg_key]["display"], inline=False)
-    em.add_field(name="RAM/CPU/Disk", value=f"{ram}MB / {cpu}% / {int(disk)//1000}GB", inline=False)
-    em.add_field(name="Identifier", value=identifier, inline=False)
-    await ctx.send(embed=em)
-
-# -----------------------------
-# ADMIN COMMANDS
-# -----------------------------
-
-@bot.group(name="admin", invoke_without_command=True)
-async def admin_group(ctx: commands.Context):
-    await ctx.send(f"Use `{PREFIX}help` to see admin subcommands.")
-
-@admin_group.command(name="add_i")
-async def admin_add_i(ctx: commands.Context, member: discord.Member, amount: int):
-    if not is_admin(ctx.author):
-        return await ctx.send("No permission.")
-    add_user_invites(member.id, amount)
-    await ctx.send(f"Added {amount} invites to {member.mention}. Total: {get_user_invites(member.id)}")
-
-@admin_group.command(name="remove_i")
-async def admin_remove_i(ctx: commands.Context, member: discord.Member, amount: int):
-    if not is_admin(ctx.author):
-        return await ctx.send("No permission.")
-    remove_user_invites(member.id, amount)
-    await ctx.send(f"Removed {amount} invites from {member.mention}. Total: {get_user_invites(member.id)}")
-
-@admin_group.command(name="add_a")
-async def admin_add_a(ctx: commands.Context, member: discord.Member):
-    if not is_admin(ctx.author):
-        return await ctx.send("No permission.")
-    admins = set(data.get("admins", []))
-    admins.add(str(member.id))
-    data["admins"] = list(admins)
-    save_data(data)
-    await ctx.send(f"{member.mention} is now a bot admin.")
-
-@admin_group.command(name="rm_a")
-async def admin_rm_a(ctx: commands.Context, member: discord.Member):
-    if not is_admin(ctx.author):
-        return await ctx.send("No permission.")
-    admins = set(data.get("admins", []))
-    admins.discard(str(member.id))
-    data["admins"] = list(admins)
-    save_data(data)
-    await ctx.send(f"Removed bot admin: {member.mention}")
-
-@admin_group.command(name="create_a")
-async def admin_create_a(ctx: commands.Context, member: discord.Member, email: str):
-    if not is_admin(ctx.author):
-        return await ctx.send("No permission.")
-    uid = create_panel_user(username=f"user{member.id}"[:24], email=email, first_name=member.display_name[:20], last_name="Discord")
-    if not uid:
-        return await ctx.send("Failed to create panel user.")
-    data.setdefault("panel_users", {})[str(member.id)] = uid
-    save_data(data)
-    await ctx.send(f"Panel user created & linked. ID: `{uid}`")
-
-@admin_group.command(name="rm_ac")
-async def admin_rm_ac(ctx: commands.Context, member: discord.Member):
-    if not is_admin(ctx.author):
-        return await ctx.send("No permission.")
-    uid = data.get("panel_users", {}).get(str(member.id))
-    if not uid:
-        return await ctx.send("No linked panel account.")
-    # delete all servers owned by user
-    servers = list_servers()
-    for s in servers:
-        # We need to fetch server owner id; application list doesn't always include owner.
-        # Fetch one-by-one for safety
-        r = requests.get(app_url(f"/servers/{s['id']}"), headers=HEADERS_APP, timeout=20)
-        if r.ok and r.json().get("attributes", {}).get("user") == uid:
-            delete_server(s['id'])
-            await asyncio.sleep(0.3)
-    ok = delete_panel_user(uid)
-    if ok:
-        data["panel_users"].pop(str(member.id), None)
+# MANAGE - simple client-key based interactive manager (start/stop/restart/kill/reinstall/ip)
+@bot.command(name="manage")
+async def manage_cmd(ctx: commands.Context):
+    # ask for client api key
+    await ctx.send("Send your **Client API Key** (Account → API) — will be stored locally for your user.")
+    def check(m):
+        return m.author.id == ctx.author.id and m.channel.id == ctx.channel.id
+    try:
+        key_msg = await bot.wait_for("message", timeout=90, check=check)
+        client_key = key_msg.content.strip()
+        data.setdefault("client_keys", {})[str(ctx.author.id)] = client_key
         save_data(data)
-        await ctx.send("Deleted user's panel account and servers.")
-    else:
-        await ctx.send("Failed to delete panel user.")
-
-@admin_group.command(name="create_s")
-async def admin_create_s(ctx: commands.Context, name: str, owner_email: str):
-    if not is_admin(ctx.author):
-        return await ctx.send("No permission.")
-    # find or create owner
-    uid = create_panel_user(username=f"staff{int(time.time())}"[-6:], email=owner_email, first_name="Owner", last_name="Auto")
-    if not uid:
-        return await ctx.send("Could not resolve owner user.")
-
-    # pick egg interactively
-    keys = list(EGG_CATALOG.keys())
-    menu = "\n".join([f"{i+1}. {EGG_CATALOG[k]['display']}" for i, k in enumerate(keys)])
-    choice = await ask(ctx, f"Select server type:\n{menu}\n\nReply with number (1-{len(keys)})", check_numeric=True, min_val=1, max_val=len(keys))
-    if not choice:
+    except asyncio.TimeoutError:
+        await ctx.send("Timed out.")
         return
-    egg_key = keys[int(choice) - 1]
-
-    ram = await ask(ctx, "Enter RAM MB (min 512, max 65536):", check_numeric=True, min_val=512, max_val=65536)
-    if not ram:
-        return
-    cpu = await ask(ctx, "Enter CPU % (min 10, max 1000):", check_numeric=True, min_val=10, max_val=1000)
-    if not cpu:
-        return
-    disk = await ask(ctx, "Enter Disk MB (min 1000, max 2097152)", check_numeric=True, min_val=1000, max_val=2097152)
-    if not disk:
-        return
-
-    alloc_id = get_free_allocation(PANEL_NODE_ID)
-    if not alloc_id and DEFAULT_ALLOCATION_ID:
-        alloc_id = int(DEFAULT_ALLOCATION_ID)
-    if not alloc_id:
-        return await ctx.send("No free allocation available.")
-
+    await ctx.send("Now send the server identifier (the short code shown in the panel).")
     try:
-        identifier = create_server(name=name, owner_id=uid, egg_key=egg_key, memory=int(ram), cpu=int(cpu), disk=int(disk), allocation_id=alloc_id)
-    except Exception as e:
-        return await ctx.send(f"❌ {e}")
+        id_msg = await bot.wait_for("message", timeout=60, check=check)
+        sid = id_msg.content.strip()
+    except asyncio.TimeoutError:
+        await ctx.send("Timed out.")
+        return
+    await ctx.send("Enter command: start / stop / restart / kill / reinstall / ip / exit")
+    while True:
+        try:
+            cmd_msg = await bot.wait_for("message", timeout=120, check=check)
+            cmd = cmd_msg.content.strip().lower()
+            if cmd == "exit":
+                await ctx.send("Exited manage mode.")
+                break
+            client_headers = {"Authorization": f"Bearer {client_key}", "Content-Type": "application/json", "Accept": "application/vnd.pterodactyl.v1+json"}
+            if cmd in ("start", "stop", "restart", "kill"):
+                r = requests.post(f"{PANEL_URL}/api/client/servers/{sid}/power", headers=client_headers, json={"signal": cmd})
+                await ctx.send("✅ Done." if r.ok else f"❌ Failed: {r.status_code} {r.text[:200]}")
+            elif cmd == "reinstall":
+                r = requests.post(f"{PANEL_URL}/api/client/servers/{sid}/settings/reinstall", headers=client_headers)
+                await ctx.send("✅ Reinstall queued." if r.ok else f"❌ {r.status_code}")
+            elif cmd == "ip":
+                r = requests.get(f"{PANEL_URL}/api/client/servers/{sid}", headers=client_headers)
+                if r.ok:
+                    at = r.json().get("attributes", {})
+                    # attempt to show allocations
+                    allocs = at.get("relationships", {}).get("allocations", {}).get("data", [])
+                    if allocs:
+                        # may need client API to fetch details - display generic
+                        await ctx.send("Allocation info present in panel. Open panel to view exact IP:port.")
+                    else:
+                        await ctx.send("No allocation info.")
+                else:
+                    await ctx.send("Failed to fetch server info.")
+            else:
+                await ctx.send("Unknown command. Use start/stop/restart/kill/reinstall/ip/exit.")
+        except asyncio.TimeoutError:
+            await ctx.send("Manage session timed out.")
+            break
 
-    await ctx.send(f"✅ Server created: **{name}** (`{identifier}`)")
+# SERVERINFO (discord server)
+@bot.command(name="serverinfo")
+async def serverinfo_cmd(ctx: commands.Context):
+    g = ctx.guild
+    if not g:
+        await ctx.send("This command must be run in a server.")
+        return
+    owner = await g.fetch_owner()
+    online = sum(1 for m in g.members if m.status != discord.Status.offline)
+    em = discord.Embed(title=g.name, color=discord.Color.blurple())
+    if g.icon:
+        try:
+            em.set_thumbnail(url=g.icon.url)
+        except Exception:
+            pass
+    em.add_field(name="Owner", value=f"{owner} ({owner.id})", inline=False)
+    em.add_field(name="Server ID", value=str(g.id))
+    em.add_field(name="Members", value=str(g.member_count))
+    em.add_field(name="Online", value=str(online))
+    em.add_field(name="Roles", value=str(len(g.roles)))
+    em.add_field(name="Bot Version", value=BOT_VERSION)
+    await ctx.send(embed=em)
 
-@admin_group.command(name="delete_s")
-async def admin_delete_s(ctx: commands.Context, server_id: int):
-    if not is_admin(ctx.author):
-        return await ctx.send("No permission.")
-    ok = delete_server(server_id)
-    await ctx.send("Deleted." if ok else "Failed to delete.")
-    
-@admin_group.command(name="newmsg")
-async def admin_newmsg(ctx: commands.Context, channel_id: int, *, text: str):
-    if not is_admin(ctx.author):
-        return await ctx.send("No permission.")
-    ch = ctx.guild.get_channel(channel_id)
-    if not ch:
-        return await ctx.send("Channel not found")
-    await ch.send(text)
-    await ctx.send("Sent.")
-
-@admin_group.command(name="lock")
-async def admin_lock(ctx: commands.Context):
-    if not is_admin(ctx.author):
-        return await ctx.send("No permission.")
-    overwrite = ctx.channel.overwrites_for(ctx.guild.default_role)
-    overwrite.send_messages = False
-    await ctx.channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
-    await ctx.send("🔒 Channel locked.")
-
-@admin_group.command(name="unlock")
-async def admin_unlock(ctx: commands.Context):
-    if not is_admin(ctx.author):
-        return await ctx.send("No permission.")
-    overwrite = ctx.channel.overwrites_for(ctx.guild.default_role)
-    overwrite.send_messages = True
-    await ctx.channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
-    await ctx.send("🔓 Channel unlocked.")
-
-# -----------------------------
-# MODERATION: CLEAR
-# -----------------------------
-
-@bot.command()
-@commands.has_permissions(manage_messages=True)
-async def clear(ctx: commands.Context, amount: int):
-    await ctx.channel.purge(limit=amount + 1)
-    msg = await ctx.send(f"Cleared {amount} messages.")
-    await asyncio.sleep(2)
-    await msg.delete()
-
-# -----------------------------
-# NODE STATUS
-# -----------------------------
-
+# NODE status (allocations)
 @bot.command(name="node")
-async def node_status(ctx: commands.Context):
+async def node_cmd(ctx: commands.Context):
     try:
-        r = requests.get(app_url(f"/nodes/{PANEL_NODE_ID}"), headers=HEADERS_APP, timeout=15)
+        r = app_get(f"/nodes/{PANEL_NODE_ID}")
         if not r.ok:
-            return await ctx.send("API error.")
-        a = r.json().get("attributes", {})
-        r2 = requests.get(app_url(f"/nodes/{PANEL_NODE_ID}/allocations"), headers=HEADERS_APP, timeout=15)
-        free = 0
+            await ctx.send("Failed to contact panel.")
+            return
+        node_attr = r.json().get("attributes", {})
+        r2 = app_get(f"/nodes/{PANEL_NODE_ID}/allocations")
         total = 0
+        free = 0
         if r2.ok:
             for item in r2.json().get("data", []):
                 total += 1
                 if not item.get("attributes", {}).get("assigned", False):
                     free += 1
-        em = discord.Embed(title="Node Status", color=discord.Color.orange())
-        em.add_field(name="Name", value=a.get("name", "?"))
-        em.add_field(name="FQDN", value=a.get("fqdn", "?"))
+        em = discord.Embed(title=f"Node: {node_attr.get('name','?')}", color=discord.Color.orange())
+        em.add_field(name="FQDN", value=node_attr.get("fqdn","?"))
         em.add_field(name="Allocations", value=f"{free} free / {total} total")
-        em.add_field(name="Maintenance", value=str(a.get("maintenance_mode", False)))
+        em.add_field(name="Maintenance", value=str(node_attr.get("maintenance_mode", False)))
         await ctx.send(embed=em)
     except Exception as e:
         await ctx.send(f"Error: {e}")
 
-# -----------------------------
-# SERVERINFO
-# -----------------------------
+# ADMIN group
+@bot.group(name="admin", invoke_without_command=True)
+async def admin_group(ctx: commands.Context):
+    if not await require_admin_ctx(ctx):
+        return
+    await ctx.send("Admin subcommands: add_i, remove_i, add_a, rm_a, create_a, rm_ac, create_s, delete_s, serverlist, newmsg, lock, unlock")
 
-@bot.command()
-async def serverinfo(ctx: commands.Context):
-    g = ctx.guild
-    if not g:
-        return await ctx.send("Use in a server.")
-    boosts = g.premium_subscription_count or 0
-    owner = await g.fetch_owner()
-    online = sum(1 for m in g.members if m.status != discord.Status.offline)
-    em = discord.Embed(title=g.name, color=discord.Color.brand_green())
-    if g.icon:
-        em.set_thumbnail(url=g.icon.url)
-    em.add_field(name="Owner", value=f"{owner} ({owner.id})", inline=False)
-    em.add_field(name="Server ID", value=g.id)
-    em.add_field(name="Members", value=g.member_count)
-    em.add_field(name="Online", value=online)
-    em.add_field(name="Boosts", value=boosts)
-    em.add_field(name="Roles", value=len(g.roles))
-    em.add_field(name="Region/Locale", value=str(g.preferred_locale))
-    em.set_footer(text=f"Bot {BOT_VERSION} • Made by {MADE_BY}")
+@admin_group.command(name="add_i")
+async def admin_add_i(ctx: commands.Context, member: discord.Member, amount: int):
+    if not await require_admin_ctx(ctx): return
+    inv = data.setdefault("invites", {})
+    inv[str(member.id)] = int(inv.get(str(member.id), 0)) + max(0, int(amount))
+    save_data(data)
+    await ctx.send(f"✅ Added {amount} invites to {member.mention}. Total: {inv[str(member.id)]}")
+
+@admin_group.command(name="remove_i")
+async def admin_remove_i(ctx: commands.Context, member: discord.Member, amount: int):
+    if not await require_admin_ctx(ctx): return
+    inv = data.setdefault("invites", {})
+    cur = int(inv.get(str(member.id), 0))
+    inv[str(member.id)] = max(0, cur - max(0, int(amount)))
+    save_data(data)
+    await ctx.send(f"✅ Removed {amount} invites from {member.mention}. Total: {inv[str(member.id)]}")
+
+@admin_group.command(name="add_a")
+async def admin_add_a(ctx: commands.Context, member: discord.Member):
+    if not await require_admin_ctx(ctx): return
+    admins = set(data.get("admins", []))
+    admins.add(str(member.id))
+    data["admins"] = list(admins)
+    save_data(data)
+    await ctx.send(f"✅ {member.mention} added to bot admins.")
+
+@admin_group.command(name="rm_a")
+async def admin_rm_a(ctx: commands.Context, member: discord.Member):
+    if not await require_admin_ctx(ctx): return
+    admins = set(data.get("admins", []))
+    admins.discard(str(member.id))
+    data["admins"] = list(admins)
+    save_data(data)
+    await ctx.send(f"✅ {member.mention} removed from bot admins.")
+
+@admin_group.command(name="create_a")
+async def admin_create_a(ctx: commands.Context, member: discord.Member, email: str, password: str):
+    if not await require_admin_ctx(ctx): return
+    uid = create_panel_user(email=email, username=f"user{member.id}", password=password, first_name=member.display_name[:20], last_name="Discord")
+    if not uid:
+        await ctx.send("❌ Could not create panel user.")
+        return
+    data.setdefault("panel_users", {})[str(member.id)] = uid
+    save_data(data)
+    try:
+        await member.send(f"Your panel account created!\nEmail: {email}\nPassword: {password}\nPanel: {PANEL_URL}")
+    except Exception:
+        pass
+    await ctx.send(f"✅ Created and linked panel user id `{uid}` to {member.mention}.")
+
+@admin_group.command(name="rm_ac")
+async def admin_rm_ac(ctx: commands.Context, member: discord.Member):
+    if not await require_admin_ctx(ctx): return
+    uid = data.get("panel_users", {}).get(str(member.id))
+    if not uid:
+        await ctx.send("No linked panel account for that user.")
+        return
+    # Delete user's servers (walk through panel servers and remove where user matches)
+    try:
+        r = app_get("/servers")
+        if r.ok:
+            for d in r.json().get("data", []):
+                a = d.get("attributes", {})
+                if a.get("user") == uid or a.get("owner", {}).get("id") == uid:
+                    delete_panel_server(a.get("id"))
+                    time.sleep(0.2)
+    except Exception:
+        pass
+    ok = delete_panel_user(uid)
+    if ok:
+        data["panel_users"].pop(str(member.id), None)
+        save_data(data)
+        await ctx.send("✅ Deleted panel user and their servers.")
+    else:
+        await ctx.send("❌ Failed to delete panel user.")
+
+@admin_group.command(name="create_s")
+async def admin_create_s(ctx: commands.Context, owner_email: str, egg_key: str, name: str, memory: int, cpu: int, disk: int):
+    if not await require_admin_ctx(ctx): return
+    # find user id
+    owner_uid = get_panel_user_id_by_email(owner_email)
+    if not owner_uid:
+        await ctx.send("❌ Owner email not found in panel. Create or link user first.")
+        return
+    if egg_key not in EGG_CATALOG:
+        await ctx.send("❌ Unknown egg key. Use one of: " + ", ".join(EGG_CATALOG.keys()))
+        return
+    await ctx.send("Creating server…")
+    try:
+        result = panel_create_server(name=name, owner_panel_id=owner_uid, egg_key=egg_key, memory=memory, cpu=cpu, disk=disk)
+        ident = result.get("attributes", {}).get("identifier")
+        await ctx.send(f"✅ Server created: `{ident}`")
+    except Exception as e:
+        await ctx.send(f"❌ Panel error: {e}")
+
+@admin_group.command(name="delete_s")
+async def admin_delete_s(ctx: commands.Context, server_id: int):
+    if not await require_admin_ctx(ctx): return
+    ok = delete_panel_server(server_id)
+    await ctx.send("✅ Deleted." if ok else "❌ Failed to delete.")
+
+@admin_group.command(name="serverlist")
+async def admin_serverlist(ctx: commands.Context):
+    if not await require_admin_ctx(ctx): return
+    servers = list_panel_servers()
+    if not servers:
+        await ctx.send("No servers or API error.")
+        return
+    lines = []
+    for s in servers:
+        lim = s.get("limits", {})
+        lines.append(f"ID {s['id']} • {s['name']} • RAM {lim.get('memory','?')}MB CPU {lim.get('cpu','?')}% Disk {lim.get('disk','?')}MB")
+    for chunk_start in range(0, len(lines), 15):
+        chunk = lines[chunk_start:chunk_start+15]
+        await ctx.send("```\n" + "\n".join(chunk) + "\n```")
+
+@admin_group.command(name="newmsg")
+async def admin_newmsg(ctx: commands.Context, channel_id: int, *, text: str):
+    if not await require_admin_ctx(ctx): return
+    ch = bot.get_channel(channel_id) or ctx.guild.get_channel(channel_id)
+    if not ch:
+        await ctx.send("Channel not found.")
+        return
+    await ch.send(text)
+    await ctx.send("✅ Sent.")
+
+@admin_group.command(name="lock")
+async def admin_lock(ctx: commands.Context, channel: Optional[discord.TextChannel] = None):
+    if not await require_admin_ctx(ctx): return
+    ch = channel or ctx.channel
+    overwrite = ch.overwrites_for(ctx.guild.default_role)
+    overwrite.send_messages = False
+    await ch.set_permissions(ctx.guild.default_role, overwrite=overwrite)
+    await ctx.send(f"🔒 Locked {ch.mention}")
+
+@admin_group.command(name="unlock")
+async def admin_unlock(ctx: commands.Context, channel: Optional[discord.TextChannel] = None):
+    if not await require_admin_ctx(ctx): return
+    ch = channel or ctx.channel
+    overwrite = ch.overwrites_for(ctx.guild.default_role)
+    overwrite.send_messages = True
+    await ch.set_permissions(ctx.guild.default_role, overwrite=overwrite)
+    await ctx.send(f"🔓 Unlocked {ch.mention}")
+
+# CLEAR
+@bot.command(name="clear")
+@commands.has_permissions(manage_messages=True)
+async def clear_cmd(ctx: commands.Context, amount: int):
+    deleted = await ctx.channel.purge(limit=min(max(amount,1), 500))
+    msg = await ctx.send(f"🧹 Cleared {len(deleted)} messages.")
+    await asyncio.sleep(3)
+    await msg.delete()
+
+# VERIFY
+@bot.command(name="verify")
+async def verify_cmd(ctx: commands.Context, tier: Optional[str] = None):
+    inv = int(data.get("invites", {}).get(str(ctx.author.id), 0))
+    if not tier:
+        await ctx.send(f"You have {inv} invites.")
+        return
+    await ctx.send(f"You requested verify for {tier}. You have {inv} invites.")
+
+# SCREENSHOT (embed)
+@bot.command(name="screenshot")
+async def screenshot_cmd(ctx: commands.Context, *, url: str):
+    em = discord.Embed(title="Screenshot", description=url)
+    try:
+        em.set_image(url=url)
+    except Exception:
+        pass
     await ctx.send(embed=em)
 
-# -----------------------------
-# BOTINFO
-# -----------------------------
-
-@bot.command()
-async def botinfo(ctx: commands.Context):
+# BOT INFO
+@bot.command(name="botinfo")
+async def botinfo_cmd(ctx: commands.Context):
     em = discord.Embed(title="Bot Info", color=discord.Color.blue())
     em.add_field(name="Version", value=BOT_VERSION)
     em.add_field(name="Made by", value=MADE_BY)
     em.add_field(name="Prefix", value=PREFIX)
     await ctx.send(embed=em)
 
-# -----------------------------
-# MANAGE (Client API key based quick controls)
-# -----------------------------
-
-@bot.command()
-async def manage(ctx: commands.Context):
-    await ctx.send("Enter your **Client API Key** from the panel (Account → API):")
-    key = await ask(ctx, "Paste key here (won't be shown to others):")
-    if not key:
-        return
-    data.setdefault("user_client_keys", {})[str(ctx.author.id)] = key.strip()
-    save_data(data)
-    await ctx.send("Saved! Now send server identifier to power control.")
-
-    ident = await ask(ctx, "Enter server **identifier** (short code):")
-    if not ident:
-        return
-
-    async def power(sig: str):
-        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "Application/vnd.pterodactyl.v1+json"}
-        rr = requests.post(client_url(f"/servers/{ident}/power"), headers=headers, json={"signal": sig}, timeout=15)
-        return rr.ok
-
-    await ctx.send("Type one of: start / stop / restart / kill / reinstall / ip / sftp")
-    while True:
-        cmd = await ask(ctx, ">>")
-        if not cmd:
-            break
-        cmd = cmd.lower()
-        if cmd in {"start", "stop", "restart", "kill"}:
-            ok = await asyncio.to_thread(power, cmd)
-            await ctx.send("✅ Done" if ok else "❌ Failed")
-        elif cmd == "reinstall":
-            headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "Application/vnd.pterodactyl.v1+json"}
-            rr = requests.post(client_url(f"/servers/{ident}/actions/reinstall"), headers=headers, timeout=20)
-            await ctx.send("✅ Reinstall requested" if rr.ok else f"❌ {rr.status_code}")
-        elif cmd == "ip":
-            headers = {"Authorization": f"Bearer {key}", "Accept": "Application/vnd.pterodactyl.v1+json"}
-            rr = requests.get(client_url(f"/servers/{ident}"), headers=headers, timeout=15)
-            if rr.ok:
-                att = rr.json().get("attributes", {})
-                allocations = att.get("relationships", {}).get("allocations", {}).get("data", [])
-                if allocations:
-                    a = allocations[0]["attributes"]
-                    await ctx.send(f"IP: {a.get('ip_alias') or a.get('ip')}:{a.get('port')}")
-                else:
-                    await ctx.send("No allocation info.")
-            else:
-                await ctx.send("API error.")
-        elif cmd == "sftp":
-            headers = {"Authorization": f"Bearer {key}", "Accept": "Application/vnd.pterodactyl.v1+json"}
-            rr = requests.get(client_url(f"/servers/{ident}/files/list?directory=/"), headers=headers, timeout=15)
-            # Not actually SFTP creds, but we can show host/username
-            await ctx.send(f"SFTP Host: {PANEL_URL.replace('https://','').replace('http://','')}\nUsername: {ident}\nPassword: (your panel password)")
-        elif cmd in {"exit", "quit"}:
-            await ctx.send("Exited manage mode.")
-            break
-        else:
-            await ctx.send("Unknown. Use: start/stop/restart/kill/reinstall/ip/sftp/exit")
-
-# -----------------------------
-# RUN
-# -----------------------------
-bot.run(TOKEN)
+# =======================
+# Start bot
+# =======================
+bot.run(BOT_TOKEN)
