@@ -659,21 +659,7 @@ async def admin_delete_s(ctx: commands.Context, server_id: int):
         return await ctx.send("No permission.")
     ok = delete_server(server_id)
     await ctx.send("Deleted." if ok else "Failed to delete.")
-
-@admin_group.command(name="serverlist")
-async def admin_serverlist(ctx: commands.Context):
-    if not is_admin(ctx.author):
-        return await ctx.send("No permission.")
-    servers = list_servers()
-    if not servers:
-        return await ctx.send("No servers or API error.")
-    lines = [f"ID {s['id']} • {s['name']} • RAM {s['limits'].get('memory','?')}MB CPU {s['limits'].get('cpu','?')}% DISK {s['limits'].get('disk','?')}MB" for s in servers]
-    chunks = ["\n".join(lines[i:i+15]) for i in range(0, len(lines), 15)]
-    for ch in chunks:
-        await ctx.send("```
-{ch}
-```")
-
+    
 @admin_group.command(name="newmsg")
 async def admin_newmsg(ctx: commands.Context, channel_id: int, *, text: str):
     if not is_admin(ctx.author):
