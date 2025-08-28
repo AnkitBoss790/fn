@@ -670,7 +670,7 @@ async def admin_serverlist(ctx: commands.Context):
     lines = [f"ID {s['id']} • {s['name']} • RAM {s['limits'].get('memory','?')}MB CPU {s['limits'].get('cpu','?')}% DISK {s['limits'].get('disk','?')}MB" for s in servers]
     chunks = ["\n".join(lines[i:i+15]) for i in range(0, len(lines), 15)]
     for ch in chunks:
-        await ctx.send(f"```
+        await ctx.send("```
 {ch}
 ```")
 
