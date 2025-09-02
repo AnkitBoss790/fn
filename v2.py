@@ -19,11 +19,11 @@ BOT_TOKEN = ""
 PANEL_URL = "https://panel.fluidmc.fun"  # no trailing slash
 PANEL_API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"
 APP_API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"
-ADMIN_IDS = ""
+ADMIN_IDS = "1405866008127864852"
 PANEL_NODE_ID = "2"  # node id to select allocations
 DEFAULT_ALLOCATION_ID = "None"
 # initial admin bootstrap (replace with your Discord ID)
-BOOTSTRAP_ADMIN_IDS = {123456789012345678}
+BOOTSTRAP_ADMIN_IDS = {1405866008127864852}
 
 # bot branding
 BOT_VERSION = "27.6v"
