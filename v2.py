@@ -97,6 +97,7 @@ DEFAULT_ENV = {
     "SPONGE_VERSION": "stable-7",
     "FORGE_VERSION": "latest",
     "MINECRAFT_VERSION": "latest",
+    "BUNGEE_VERSION": "latest",
 }
 
 EGG_CATALOG: Dict[str, Dict[str, Any]] = {
