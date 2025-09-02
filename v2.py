@@ -18,6 +18,8 @@ from discord.ext import commands
 BOT_TOKEN = ""
 PANEL_URL = "https://panel.fluidmc.fun"  # no trailing slash
 PANEL_API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"
+APP_API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"
+ADMIN_IDS = ""
 PANEL_NODE_ID = "2"  # node id to select allocations
 DEFAULT_ALLOCATION_ID = "None"
 # initial admin bootstrap (replace with your Discord ID)
@@ -451,12 +453,11 @@ async def register_cmd(ctx, email: str, password: str):
 
 @bot.command(name="create")
 async def create_user_server_cmd(ctx, name: str, ram: int, cpu: int, disk: int, egg: str = "paper"):
-    uid = data.get("panel_users", {}).get(str(ctx.author.id))
-    if not uid:
-        return await ctx.reply(f"Link your panel account first: `{PREFIX}register <email> <password>`")
-    await ctx.reply("⚙️ Creating your server — please wait...")
-    ok, msg = await create_server_app(name=name, owner_panel_id=uid, egg_key=egg, memory=ram, cpu=cpu, disk=disk)
-    await ctx.reply(msg)
+    user_id = str(ctx.author.id)
+
+    # Pehle check kare ki user ne pehle se server create kiya hai ya nahi
+    if user_id in data.get("user_servers", {}):
+        return await ctx.reply("❌ Aap pehle hi ek server create kar chuke ho. Har user ek hi server bana sakta hai.")
 
 # =========================
 # Manage group (client API)
@@ -664,6 +665,135 @@ async def admin_unlock(ctx):
     data["locked_channels"] = list(map(str, locked_ids))
     save_data(data)
     await ctx.reply("🔓 Channel unlocked.")
+
+# ==========================
+# Suspend server (Admin only)
+# ==========================
+@bot.command(name="suspendserver")
+async def suspend_server(ctx, serverid: str):
+    if str(ctx.author.id) not in ADMIN_IDS:
+        return await ctx.reply("❌ You are not authorized to use this command.")
+
+    url = f"{PANEL_URL}/api/application/servers/{serverid}/suspend"
+    headers = {"Authorization": f"Bearer {APP_API_KEY}", "Content-Type": "application/json", "Accept": "application/json"}
+    r = requests.post(url, headers=headers)
+
+    if r.status_code == 204:
+        await ctx.reply(f"✅ Server `{serverid}` suspended successfully.")
+    else:
+        await ctx.reply(f"❌ Failed to suspend server. ({r.text})")
+
+
+# ==========================
+# Unsuspend server (Admin only)
+# ==========================
+@bot.command(name="unsuspendserver")
+async def unsuspend_server(ctx, serverid: str):
+    if str(ctx.author.id) not in ADMIN_IDS:
+        return await ctx.reply("❌ You are not authorized to use this command.")
+
+    url = f"{PANEL_URL}/api/application/servers/{serverid}/unsuspend"
+    headers = {"Authorization": f"Bearer {APP_API_KEY}", "Content-Type": "application/json", "Accept": "application/json"}
+    r = requests.post(url, headers=headers)
+
+    if r.status_code == 204:
+        await ctx.reply(f"✅ Server `{serverid}` unsuspended successfully.")
+    else:
+        await ctx.reply(f"❌ Failed to unsuspend server. ({r.text})")
+
+
+# ==========================
+# Create Client API Key (User allowed)
+# ==========================
+@bot.command(name="createapikey")
+async def create_api_key(ctx, name: str):
+    url = f"{PANEL_URL}/api/client/account/api-keys"
+    headers = {"Authorization": f"Bearer {APP_API_KEY}", "Content-Type": "application/json", "Accept": "application/json"}
+    data = {"description": name}
+    r = requests.post(url, headers=headers, json=data)
+
+    if r.status_code in (200, 201):
+        api_key = r.json().get("secret")
+        await ctx.author.send(f"🔑 Your Client API Key: `{api_key}`")
+        await ctx.reply("✅ API key created and sent to your DM.")
+    else:
+        await ctx.reply(f"❌ Failed to create API key. ({r.text})")
+
+
+# ==========================
+# Change user password (User allowed)
+# ==========================
+@bot.command(name="changepass")
+async def change_pass(ctx, email: str, old: str, new: str, confirm: str):
+    if new != confirm:
+        return await ctx.reply("❌ New password and confirm password do not match.")
+
+    user_id = await find_panel_user_by_email(email)  # 👉 tera function
+    if not user_id:
+        return await ctx.reply("❌ User not found.")
+
+    url = f"{PANEL_URL}/api/application/users/{user_id}"
+    headers = {"Authorization": f"Bearer {APP_API_KEY}", "Content-Type": "application/json", "Accept": "application/json"}
+    data = {"password": new}
+    r = requests.patch(url, headers=headers, json=data)
+
+    if r.status_code == 200:
+        await ctx.reply(f"✅ Password updated for `{email}`.")
+    else:
+        await ctx.reply(f"❌ Failed to change password. ({r.text})")
+
+
+# ==========================
+# Send Server Info to User (Admin only)
+# ==========================
+@bot.command(name="sendserver")
+async def send_server(ctx, ram: int, cpu: int, disk: int, email: str, password: str, usertag: discord.User):
+    if str(ctx.author.id) not in ADMIN_IDS:
+        return await ctx.reply("❌ You are not authorized to use this command.")
+
+    uid = await find_panel_user_by_email(email)
+    if not uid:
+        return await ctx.reply("❌ User email not found.")
+
+    ok, msg = await create_server_app(
+        name=f"{usertag.name}_server",
+        owner_panel_id=uid,
+        egg_key="paper",
+        memory=ram,
+        cpu=cpu,
+        disk=disk
+    )
+
+    if ok:
+        try:
+            await usertag.send(
+                f"🎉 Your server has been created!\n"
+                f"🔗 Panel: {PANEL_URL}\n"
+                f"📧 Email: `{email}`\n"
+                f"🔑 Password: `{password}`\n"
+                f"💾 Specs: {ram}MB RAM | {cpu}% CPU | {disk}MB Disk"
+            )
+            await ctx.reply(f"✅ Server created and info sent to {usertag.mention}")
+        except:
+            await ctx.reply("⚠️ Could not DM user, maybe DMs are off.")
+    else:
+        await ctx.reply(f"❌ {msg}")
+
+
+# ==========================
+# Drop message (Admin broadcast)
+# ==========================
+@bot.command(name="drop")
+async def drop_msg(ctx, *, message: str):
+    if str(ctx.author.id) not in ADMIN_IDS:
+        return await ctx.reply("❌ You are not authorized to use this command.")
+
+    for member in ctx.guild.members:
+        try:
+            await member.send(f"📢 {message}")
+        except:
+            continue
+    await ctx.reply("✅ Broadcast message sent to all users.")
 
 # =========================
 # Run bot
