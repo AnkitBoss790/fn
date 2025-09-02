@@ -614,12 +614,12 @@ async def admin_create_s(
 
     ok, msg = await create_server_app(
         name=name,
+        node=nodeid,
         owner_panel_id=uid,
         egg_key=egg,
         memory=ram,
         cpu=cpu,
-        disk=disk,
-        node=nodeid  # 👈 Pass nodeid to function
+        disk=disk  # 👈 Pass nodeid to function
     )
     
     await ctx.reply(msg)
