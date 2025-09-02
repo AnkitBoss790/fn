@@ -19,11 +19,11 @@ BOT_TOKEN = ""
 PANEL_URL = "https://panel.fluidmc.fun"  # no trailing slash
 PANEL_API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"
 APP_API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"          # Pterodactyl Application API Key
-ADMIN_IDS = ["123456789012345678"]
+ADMIN_IDS = ["1405866008127864852"]
 PANEL_NODE_ID = "2"  # node id to select allocations
 DEFAULT_ALLOCATION_ID = "None"
 # initial admin bootstrap (replace with your Discord ID)
-BOOTSTRAP_ADMIN_IDS = {123456789012345678}
+BOOTSTRAP_ADMIN_IDS = {1405866008127864852}
 
 # bot branding
 BOT_VERSION = "27.6v"
@@ -454,14 +454,39 @@ async def register_cmd(ctx, email: str, password: str):
 @bot.command(name="create")
 async def create_user_server_cmd(ctx, name: str, ram: int, cpu: int, disk: int, egg: str = "paper"):
     user_id = str(ctx.author.id)
+
     # Pehle check kare ki user ne pehle se server create kiya hai ya nahi
     if user_id in data.get("user_servers", {}):
         return await ctx.reply("❌ Aap pehle hi ek server create kar chuke ho. Har user ek hi server bana sakta hai.")
-   uid = data.get("panel_users", {}).get(str(ctx.author.id))
+
+    uid = data.get("panel_users", {}).get(user_id)
     if not uid:
-        return await ctx.reply(f"Link your panel account first: `{PREFIX}register <email> <password>`")
+        return await ctx.reply(f"⚠️ Pehle apna panel account link karo: `{PREFIX}register <email> <password>`")
+
     await ctx.reply("⚙️ Creating your server — please wait...")
-    ok, msg = await create_server_app(name=name, owner_panel_id=uid, egg_key=egg, memory=ram, cpu=cpu, disk=disk)
+
+    ok, msg = await create_server_app(
+        name=name,
+        owner_panel_id=uid,
+        egg_key=egg,
+        memory=ram,
+        cpu=cpu,
+        disk=disk
+    )
+
+    if ok:
+        # Save server info taaki dubara create na kar sake
+        if "user_servers" not in data:
+            data["user_servers"] = {}
+        data["user_servers"][user_id] = {
+            "name": name,
+            "ram": ram,
+            "cpu": cpu,
+            "disk": disk,
+            "egg": egg
+        }
+        save_data(data)
+
     await ctx.reply(msg)
 
 # =========================
