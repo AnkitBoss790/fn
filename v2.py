@@ -454,10 +454,15 @@ async def register_cmd(ctx, email: str, password: str):
 @bot.command(name="create")
 async def create_user_server_cmd(ctx, name: str, ram: int, cpu: int, disk: int, egg: str = "paper"):
     user_id = str(ctx.author.id)
-
     # Pehle check kare ki user ne pehle se server create kiya hai ya nahi
     if user_id in data.get("user_servers", {}):
         return await ctx.reply("❌ Aap pehle hi ek server create kar chuke ho. Har user ek hi server bana sakta hai.")
+   uid = data.get("panel_users", {}).get(str(ctx.author.id))
+    if not uid:
+        return await ctx.reply(f"Link your panel account first: `{PREFIX}register <email> <password>`")
+    await ctx.reply("⚙️ Creating your server — please wait...")
+    ok, msg = await create_server_app(name=name, owner_panel_id=uid, egg_key=egg, memory=ram, cpu=cpu, disk=disk)
+    await ctx.reply(msg)
 
 # =========================
 # Manage group (client API)
