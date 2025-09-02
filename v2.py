@@ -10,11 +10,12 @@ from discord.ext import commands
 # CONFIG (EDIT THESE)
 # =========================
 BOT_TOKEN = 
-PANEL_API_KEY = 
+PANEL_URL = "https://panel.fluidmc.fun/"
+PANEL_API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"
 PANEL_NODE_ID = "2"  # node id to pull allocations from
 DEFAULT_ALLOCATION_ID = "None"
 # Who is allowed to use *admin ... (IDs get persisted too; this is just bootstrap)
-BOOTSTRAP_ADMIN_IDS = {123456789012345678}
+BOOTSTRAP_ADMIN_IDS = {2}
 
 # Branding (for *botinfo)
 BOT_VERSION = "v2"
