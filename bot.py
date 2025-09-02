@@ -593,13 +593,35 @@ async def admin_rm_ac(ctx, member: discord.Member):
         await ctx.reply("Nothing to unlink.")
 
 @admin_grp.command(name="create_s")
-async def admin_create_s(ctx, owner_email: str, egg: str, name: str, ram: int, cpu: int, disk: int):
-    if not await require_admin_ctx(ctx): return
+async def admin_create_s(
+    ctx,
+    owner_email: str,
+    egg: str,
+    name: str,
+    ram: int,
+    cpu: int,
+    disk: int,
+    nodeid: str,   # 👈 New argument for Node ID
+):
+    if not await require_admin_ctx(ctx):
+        return
+
     uid = await find_panel_user_by_email(owner_email)
     if not uid:
         return await ctx.reply("❌ Owner email not found in panel.")
+
     await ctx.reply("⚙️ Creating server...")
-    ok, msg = await create_server_app(name=name, owner_panel_id=uid, egg_key=egg, memory=ram, cpu=cpu, disk=disk)
+
+    ok, msg = await create_server_app(
+        name=name,
+        owner_panel_id=uid,
+        egg_key=egg,
+        memory=ram,
+        cpu=cpu,
+        disk=disk,
+        node=nodeid  # 👈 Pass nodeid to function
+    )
+    
     await ctx.reply(msg)
 
 @admin_grp.command(name="delete_s")
