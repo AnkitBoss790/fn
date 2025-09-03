@@ -18,6 +18,7 @@ from discord.ext import commands
 BOT_TOKEN = ""
 PANEL_URL = "https://panel.fluidmc.fun"  # no trailing slash
 PANEL_API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"
+API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"
 APP_API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"
 ADMIN_IDS = "1405866008127864852"
 PANEL_NODE_ID = "2"  # node id to select allocations
@@ -492,64 +493,153 @@ async def create_user_server_cmd(ctx, name: str, ram: int, cpu: int, disk: int, 
 # =========================
 # Manage group (client API)
 # =========================
-@bot.group(name="manage", invoke_without_command=True)
-async def manage_grp(ctx):
-    await ctx.reply(f"Manage usage:\n`{PREFIX}manage key <client_api_key>`\n`{PREFIX}manage start|stop|restart|kill <identifier>`\n`{PREFIX}manage reinstall <identifier>`\n`{PREFIX}manage info <identifier>`")
+class ServerControlView(discord.ui.View):
+    def __init__(self, token: str, serverid: str):
+        super().__init__(timeout=None)
+        self.token = token
+        self.serverid = serverid
+        self.base = f"https://panel.fluidmc.fun/api/client/servers/{self.serverid}"
 
-@manage_grp.command(name="key")
-async def manage_key(ctx, client_api_key: str):
-    data.setdefault("client_keys", {})[str(ctx.author.id)] = client_api_key
-    save_data(data)
-    await ctx.reply("✅ Saved your client API key locally.")
+    async def _client(self):
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        return aiohttp.ClientSession(headers=headers)
 
-async def require_client_key_for_ctx(ctx) -> Optional[str]:
-    key = data.get("client_keys", {}).get(str(ctx.author.id))
-    if not key:
-        await ctx.reply(f"Add your key first: `{PREFIX}manage key <client_api_key>`")
-        return None
-    return key
+    # -------------------- POWER CONTROLS --------------------
+    async def send_power_signal(self, interaction: discord.Interaction, signal: str):
+        url = f"https://panel.fluidmc.fun/api/client/servers/{self.serverid}/power"
+        headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json", "Content-Type": "application/json"}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json={"signal": signal}) as resp:
+                if resp.status == 204:
+                    await interaction.response.send_message(f"✅ `{signal}` sent to `{self.serverid}`.", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"❌ Failed to send `{signal}`. Status: {resp.status}", ephemeral=True)
 
-@manage_grp.command(name="start")
-async def manage_start(ctx, identifier: str):
-    key = await require_client_key_for_ctx(ctx)
-    if not key: return
-    ok, msg = await client_power(key, identifier, "start")
-    await ctx.reply(msg)
+    @discord.ui.button(label="Start", style=discord.ButtonStyle.success)
+    async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.send_power_signal(interaction, "start")
 
-@manage_grp.command(name="stop")
-async def manage_stop(ctx, identifier: str):
-    key = await require_client_key_for_ctx(ctx)
-    if not key: return
-    ok, msg = await client_power(key, identifier, "stop")
-    await ctx.reply(msg)
+    @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger)
+    async def stop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.send_power_signal(interaction, "stop")
 
-@manage_grp.command(name="restart")
-async def manage_restart(ctx, identifier: str):
-    key = await require_client_key_for_ctx(ctx)
-    if not key: return
-    ok, msg = await client_power(key, identifier, "restart")
-    await ctx.reply(msg)
+    @discord.ui.button(label="Restart", style=discord.ButtonStyle.primary)
+    async def restart_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.send_power_signal(interaction, "restart")
 
-@manage_grp.command(name="kill")
-async def manage_kill(ctx, identifier: str):
-    key = await require_client_key_for_ctx(ctx)
-    if not key: return
-    ok, msg = await client_power(key, identifier, "kill")
-    await ctx.reply(msg)
+    @discord.ui.button(label="Reinstall", style=discord.ButtonStyle.secondary)
+    async def reinstall_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.send_power_signal(interaction, "reinstall")
 
-@manage_grp.command(name="reinstall")
-async def manage_reinstall(ctx, identifier: str):
-    key = await require_client_key_for_ctx(ctx)
-    if not key: return
-    ok, msg = await client_reinstall(key, identifier)
-    await ctx.reply(msg)
+    # -------------------- RANDOM STATUS --------------------
+    @discord.ui.button(label="Index", style=discord.ButtonStyle.blurple, emoji="📊")
+    async def index_btn(self, i: discord.Interaction, _):
+        choices = ["🔄 Running...", "✅ Active", "🛑 Stopped", "⚠️ Loading..."]
+        msg = random.choice(choices)
+        await i.response.send_message(msg, ephemeral=True)
 
-@manage_grp.command(name="info")
-async def manage_info(ctx, identifier: str):
-    key = await require_client_key_for_ctx(ctx)
-    if not key: return
-    ok, msg = await client_info(key, identifier)
-    await ctx.reply(msg)
+    # -------------------- USER INFO --------------------
+    @discord.ui.button(label="User Info", style=discord.ButtonStyle.gray, emoji="👤")
+    async def userinfo_btn(self, i: discord.Interaction, _):
+        class UserModal(discord.ui.Modal, title="Enter Your Account Email"):
+            email = discord.ui.TextInput(label="Panel Email", placeholder="you@example.com", required=True)
+
+            async def on_submit(self, modal_i: discord.Interaction):
+                embed = discord.Embed(
+                    title="Confirm Account Info",
+                    description=f"Email: `{self.email.value}`\n\nDo you want to continue?",
+                    color=discord.Color.blue()
+                )
+                view = discord.ui.View()
+
+                async def yes_btn(btn_i: discord.Interaction):
+                    await btn_i.response.send_message("✅ Account info confirmed.", ephemeral=True)
+
+                async def no_btn(btn_i: discord.Interaction):
+                    await btn_i.response.send_message("❌ Cancelled.", ephemeral=True)
+
+                view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.success, custom_id="yes"))
+                view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.danger, custom_id="no"))
+
+                async def callback(interact: discord.Interaction):
+                    if interact.data["custom_id"] == "yes":
+                        await yes_btn(interact)
+                    else:
+                        await no_btn(interact)
+
+                view.interaction_check = lambda _: True
+                view.on_timeout = lambda: None
+                view.children[0].callback = callback
+                view.children[1].callback = callback
+
+                await modal_i.response.send_message(embed=embed, view=view, ephemeral=True)
+
+        await i.response.send_modal(UserModal())
+
+
+# -------------------- MANAGE COMMAND --------------------
+@bot.command(name="manage")
+async def manage(ctx, token: str):
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://panel.fluidmc.fun/api/client", headers=headers) as resp:
+            if resp.status != 200:
+                return await ctx.reply("❌ Invalid token.")
+            data = await resp.json()
+
+    servers = data.get("data", [])
+    if not servers:
+        return await ctx.reply("❌ No servers found.")
+
+    for server in servers:
+        sid = server['attributes']['identifier']
+        name = server['attributes']['name']
+        embed = discord.Embed(title=f"🎮 {name} ({sid})", color=discord.Color.blurple())
+        embed.add_field(name="Controls", value="Start / Stop / Restart / Reinstall / Upload / IP Info / Delete File / Index / User Info", inline=False)
+        await ctx.reply(embed=embed, view=ServerControlView(token, sid))
+       
+# -------------------- GET SERVER INTERNAL ID --------------------
+async def get_server_internal_id(identifier):
+    url = "https://panel.fluidmc.fun/api/application/servers"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+            for s in data.get("data", []):
+                if s['attributes']['identifier'] == identifier:
+                    return s['attributes']['id']
+    return None
+# -------------------- ADMIN CREATE ACCOUNT --------------------
+@bot.command(name="create_ad")
+async def create_ad(ctx, email: str, password: str, is_admin: str):
+    if not await require_admin_ctx(ctx):
+        return await ctx.reply("❌ Only admins can use this command.")
+
+    url = "https://panel.fluidmc.fun/api/application/users"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json", "Content-Type": "application/json"}
+    payload = {
+        "email": email,
+        "username": email.split("@")[0],
+        "first_name": "User",
+        "last_name": "Created",
+        "password": password,
+        "root_admin": True if is_admin.lower() == "yes" else False,
+        "language": "en"
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=payload) as resp:
+            if resp.status == 201:
+                return await ctx.reply(f"✅ Created account for `{email}` | Admin: {is_admin}")
+            else:
+                err = await resp.text()
+                return await ctx.reply(f"❌ Failed to create account. ({resp.status})\n{err}")
 
 # =========================
 # Node status
