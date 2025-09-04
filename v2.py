@@ -506,11 +506,16 @@ class ServerControlView(discord.ui.View):
             "Accept": "application/json",
             "Content-Type": "application/json"
         }
-        return aiohttp.ClientSession(headers=headers)
+class ServerControlView(discord.ui.View):
+    def __init__(self, token: str, serverid: str):
+        super().__init__(timeout=None)
+        self.token = token
+        self.serverid = serverid
+        self.base = f"https://panel.fluidmc.fun/api/client/servers/{self.serverid}"
 
     # -------------------- POWER CONTROLS --------------------
     async def send_power_signal(self, interaction: discord.Interaction, signal: str):
-        url = f"https://panel.fluidmc.fun/api/client/servers/{self.serverid}/power"
+        url = f"{self.base}/power"
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json", "Content-Type": "application/json"}
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json={"signal": signal}) as resp:
@@ -535,73 +540,69 @@ class ServerControlView(discord.ui.View):
     async def reinstall_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.send_power_signal(interaction, "reinstall")
 
-    # -------------------- RANDOM STATUS --------------------
-    @discord.ui.button(label="Index", style=discord.ButtonStyle.blurple, emoji="📊")
-    async def index_btn(self, i: discord.Interaction, _):
-        choices = ["🔄 Running...", "✅ Active", "🛑 Stopped", "⚠️ Loading..."]
-        msg = random.choice(choices)
-        await i.response.send_message(msg, ephemeral=True)
+    # -------------------- ADVANCED MORE BUTTON --------------------
+    @discord.ui.button(label="More", style=discord.ButtonStyle.blurple, emoji="⚙️")
+    async def more_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title=f"🛠️ Advanced Controls — {self.serverid}",
+            description="Extra tools for file & server management",
+            color=discord.Color.orange()
+        )
 
-    # -------------------- USER INFO --------------------
-    @discord.ui.button(label="User Info", style=discord.ButtonStyle.gray, emoji="👤")
-    async def userinfo_btn(self, i: discord.Interaction, _):
-        class UserModal(discord.ui.Modal, title="Enter Your Account Email"):
-            email = discord.ui.TextInput(label="Panel Email", placeholder="you@example.com", required=True)
+        view = discord.ui.View()
 
-            async def on_submit(self, modal_i: discord.Interaction):
-                embed = discord.Embed(
-                    title="Confirm Account Info",
-                    description=f"Email: `{self.email.value}`\n\nDo you want to continue?",
-                    color=discord.Color.blue()
-                )
-                view = discord.ui.View()
+        # File Upload
+        @discord.ui.button(label="Upload File", style=discord.ButtonStyle.success, emoji="📤")
+        async def upload_file(_, i: discord.Interaction):
+            await i.response.send_message("📤 Send me the file to upload (attach file).", ephemeral=True)
 
-                async def yes_btn(btn_i: discord.Interaction):
-                    await btn_i.response.send_message("✅ Account info confirmed.", ephemeral=True)
+        # Delete File
+        @discord.ui.button(label="Delete File", style=discord.ButtonStyle.danger, emoji="🗑️")
+        async def delete_file(_, i: discord.Interaction):
+            await i.response.send_message("🗑️ Enter file path to delete:", ephemeral=True)
 
-                async def no_btn(btn_i: discord.Interaction):
-                    await btn_i.response.send_message("❌ Cancelled.", ephemeral=True)
+        # List Files
+        @discord.ui.button(label="List Files", style=discord.ButtonStyle.secondary, emoji="📂")
+        async def list_file(_, i: discord.Interaction):
+            await i.response.send_message("📂 Fetching file list from Pterodactyl...", ephemeral=True)
 
-                view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.success, custom_id="yes"))
-                view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.danger, custom_id="no"))
+        # Edit File
+        @discord.ui.button(label="Edit File", style=discord.ButtonStyle.primary, emoji="✏️")
+        async def edit_file(_, i: discord.Interaction):
+            await i.response.send_message("✏️ Enter file path to edit:", ephemeral=True)
 
-                async def callback(interact: discord.Interaction):
-                    if interact.data["custom_id"] == "yes":
-                        await yes_btn(interact)
-                    else:
-                        await no_btn(interact)
+        # Create Backup
+        @discord.ui.button(label="Create Backup", style=discord.ButtonStyle.success, emoji="💾")
+        async def create_backup(_, i: discord.Interaction):
+            await i.response.send_message("💾 Backup requested...", ephemeral=True)
 
-                view.interaction_check = lambda _: True
-                view.on_timeout = lambda: None
-                view.children[0].callback = callback
-                view.children[1].callback = callback
+        # Run CMD
+        @discord.ui.button(label="Run CMD", style=discord.ButtonStyle.blurple, emoji="💻")
+        async def run_cmd(_, i: discord.Interaction):
+            await i.response.send_message("💻 Enter command to run on server:", ephemeral=True)
 
-                await modal_i.response.send_message(embed=embed, view=view, ephemeral=True)
+        # Add Operator (Minecraft OP)
+        @discord.ui.button(label="Add Operator", style=discord.ButtonStyle.green, emoji="👑")
+        async def add_op(_, i: discord.Interaction):
+            await i.response.send_message("👑 Enter Minecraft username to OP:", ephemeral=True)
 
-        await i.response.send_modal(UserModal())
+        # Exit
+        @discord.ui.button(label="Exit", style=discord.ButtonStyle.danger, emoji="❌")
+        async def exit_panel(_, i: discord.Interaction):
+            await i.response.send_message("❌ Exited advanced controls.", ephemeral=True)
 
+        # add all buttons
+        view.add_item(upload_file)
+        view.add_item(delete_file)
+        view.add_item(list_file)
+        view.add_item(edit_file)
+        view.add_item(create_backup)
+        view.add_item(run_cmd)
+        view.add_item(add_op)
+        view.add_item(exit_panel)
 
-# -------------------- MANAGE COMMAND --------------------
-@bot.command(name="manage")
-async def manage(ctx, token: str):
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    async with aiohttp.ClientSession() as session:
-        async with session.get("https://panel.fluidmc.fun/api/client", headers=headers) as resp:
-            if resp.status != 200:
-                return await ctx.reply("❌ Invalid token.")
-            data = await resp.json()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    servers = data.get("data", [])
-    if not servers:
-        return await ctx.reply("❌ No servers found.")
-
-    for server in servers:
-        sid = server['attributes']['identifier']
-        name = server['attributes']['name']
-        embed = discord.Embed(title=f"🎮 {name} ({sid})", color=discord.Color.blurple())
-        embed.add_field(name="Controls", value="Start / Stop / Restart / Reinstall / Upload / IP Info / Delete File / Index / User Info", inline=False)
-        await ctx.reply(embed=embed, view=ServerControlView(token, sid))
-       
 # -------------------- GET SERVER INTERNAL ID --------------------
 async def get_server_internal_id(identifier):
     url = "https://panel.fluidmc.fun/api/application/servers"
