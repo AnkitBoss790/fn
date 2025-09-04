@@ -487,53 +487,102 @@ async def create_user_server_cmd(ctx, name: str, ram: int, cpu: int, disk: int, 
         }
         save_data(data)
 
-    await ctx.reply(msg)
+class ServerControlView(discord.ui.View):
+    def __init__(self, token: str, serverid: str):
+        super().__init__(timeout=None)
+        self.token = token
+        self.serverid = serverid
+        self.base = f"https://panel.fluidmc.fun/api/client/servers/{self.serverid}"
 
-# =========================
-# Manage group (client API)
-# =========================
-class ManageButtons(discord.ui.View):
-    def __init__(self, client_key: str, identifier: str):
-        super().__init__(timeout=120)
-        self.client_key = client_key
-        self.identifier = identifier
+    # -------------------- POWER CONTROLS --------------------
+    async def send_power_signal(self, interaction: discord.Interaction, signal: str):
+        url = f"{self.base}/power"
+        headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json", "Content-Type": "application/json"}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json={"signal": signal}) as resp:
+                if resp.status == 204:
+                    await interaction.response.send_message(f"✅ `{signal}` sent to `{self.serverid}`.", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"❌ Failed to send `{signal}`. Status: {resp.status}", ephemeral=True)
 
-    @discord.ui.button(label="Start", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="Start", style=discord.ButtonStyle.success)
     async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ok, msg = await client_power(self.client_key, self.identifier, "start")
-        await interaction.response.send_message(msg, ephemeral=True)
+        await self.send_power_signal(interaction, "start")
 
-    @discord.ui.button(label="Stop", style=discord.ButtonStyle.red)
+    @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger)
     async def stop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ok, msg = await client_power(self.client_key, self.identifier, "stop")
-        await interaction.response.send_message(msg, ephemeral=True)
+        await self.send_power_signal(interaction, "stop")
 
-    @discord.ui.button(label="Restart", style=discord.ButtonStyle.blurple)
+    @discord.ui.button(label="Restart", style=discord.ButtonStyle.primary)
     async def restart_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ok, msg = await client_power(self.client_key, self.identifier, "restart")
-        await interaction.response.send_message(msg, ephemeral=True)
+        await self.send_power_signal(interaction, "restart")
 
-    @discord.ui.button(label="Kill", style=discord.ButtonStyle.gray)
-    async def kill_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ok, msg = await client_power(self.client_key, self.identifier, "kill")
-        await interaction.response.send_message(msg, ephemeral=True)
-
-    @discord.ui.button(label="Reinstall", style=discord.ButtonStyle.red)
+    @discord.ui.button(label="Reinstall", style=discord.ButtonStyle.secondary)
     async def reinstall_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ok, msg = await client_reinstall(self.client_key, self.identifier)
-        await interaction.response.send_message(msg, ephemeral=True)
+        await self.send_power_signal(interaction, "reinstall")
 
-    @discord.ui.button(label="Info", style=discord.ButtonStyle.primary)
-    async def info_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ok, msg = await client_info(self.client_key, self.identifier)
-        await interaction.response.send_message(msg, ephemeral=True)
+    # -------------------- ADVANCED MORE BUTTON --------------------
+    @discord.ui.button(label="More", style=discord.ButtonStyle.blurple, emoji="⚙️")
+    async def more_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title=f"🛠️ Advanced Controls — {self.serverid}",
+            description="Extra tools for file & server management",
+            color=discord.Color.orange()
+        )
 
-@manage_grp.command(name="panel")
-async def manage_panel(ctx, identifier: str):
-    key = await require_client_key_for_ctx(ctx)
-    if not key: return
-    view = ManageButtons(client_key=key, identifier=identifier)
-    await ctx.reply(f"⚡ Manage server `{identifier}` with buttons:", view=view)
+        view = discord.ui.View()
+
+        # File Upload
+        @discord.ui.button(label="Upload File", style=discord.ButtonStyle.success, emoji="📤")
+        async def upload_file(_, i: discord.Interaction):
+            await i.response.send_message("📤 Send me the file to upload (attach file).", ephemeral=True)
+
+        # Delete File
+        @discord.ui.button(label="Delete File", style=discord.ButtonStyle.danger, emoji="🗑️")
+        async def delete_file(_, i: discord.Interaction):
+            await i.response.send_message("🗑️ Enter file path to delete:", ephemeral=True)
+
+        # List Files
+        @discord.ui.button(label="List Files", style=discord.ButtonStyle.secondary, emoji="📂")
+        async def list_file(_, i: discord.Interaction):
+            await i.response.send_message("📂 Fetching file list from Pterodactyl...", ephemeral=True)
+
+        # Edit File
+        @discord.ui.button(label="Edit File", style=discord.ButtonStyle.primary, emoji="✏️")
+        async def edit_file(_, i: discord.Interaction):
+            await i.response.send_message("✏️ Enter file path to edit:", ephemeral=True)
+
+        # Create Backup
+        @discord.ui.button(label="Create Backup", style=discord.ButtonStyle.success, emoji="💾")
+        async def create_backup(_, i: discord.Interaction):
+            await i.response.send_message("💾 Backup requested...", ephemeral=True)
+
+        # Run CMD
+        @discord.ui.button(label="Run CMD", style=discord.ButtonStyle.blurple, emoji="💻")
+        async def run_cmd(_, i: discord.Interaction):
+            await i.response.send_message("💻 Enter command to run on server:", ephemeral=True)
+
+        # Add Operator (Minecraft OP)
+        @discord.ui.button(label="Add Operator", style=discord.ButtonStyle.green, emoji="👑")
+        async def add_op(_, i: discord.Interaction):
+            await i.response.send_message("👑 Enter Minecraft username to OP:", ephemeral=True)
+
+        # Exit
+        @discord.ui.button(label="Exit", style=discord.ButtonStyle.danger, emoji="❌")
+        async def exit_panel(_, i: discord.Interaction):
+            await i.response.send_message("❌ Exited advanced controls.", ephemeral=True)
+
+        # add all buttons
+        view.add_item(upload_file)
+        view.add_item(delete_file)
+        view.add_item(list_file)
+        view.add_item(edit_file)
+        view.add_item(create_backup)
+        view.add_item(run_cmd)
+        view.add_item(add_op)
+        view.add_item(exit_panel)
+
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 # =========================
 # Node status
