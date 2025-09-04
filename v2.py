@@ -380,6 +380,44 @@ async def help_cmd(ctx: commands.Context):
     em.set_footer(text=f"{MADE_BY} • {SERVER_LOCATION} • {BOT_VERSION}")
     await ctx.reply(embed=em, mention_author=False)
 
+# -------------------- USER CREATE OWN API KEY --------------------
+@bot.command(name="createkey")
+async def createkey(ctx, email: str, password: str, namekey: str):
+    await ctx.message.delete()  # hide user credentials from chat for security
+    msg = await ctx.send("⏳ Generating your API key...")
+
+    login_url = "https://panel.fluidmc.fun/auth/login"
+    create_url = "https://panel.fluidmc.fun/api/client/account/api-keys"
+
+    async with aiohttp.ClientSession() as session:
+        # Step 1: login with user email + password
+        login_data = {"user": email, "password": password}
+        async with session.post(login_url, data=login_data) as resp:
+            if resp.status != 200:
+                return await msg.edit(content="❌ Invalid email or password.")
+
+        # Step 2: create new API key
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        payload = {"description": namekey}
+        async with session.post(create_url, headers=headers, json=payload) as resp2:
+            if resp2.status in [200, 201]:
+                data = await resp2.json()
+                secret = data.get("token", "❌ Not Found")
+
+                embed = discord.Embed(
+                    title="✅ API Key Created",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="📧 Email", value=f"`{email}`", inline=False)
+                embed.add_field(name="🔑 Key Name", value=f"`{namekey}`", inline=True)
+                embed.add_field(name="🗝️ API Key", value=f"```{secret}```", inline=False)
+                embed.set_footer(text="Save this key safely, you won’t see it again.")
+
+                await msg.edit(content="", embed=embed)
+            else:
+                err = await resp2.text()
+                await msg.edit(content=f"❌ Failed to create API key. ({resp2.status})\n{err}")
+    
 # =========================
 # Plans / invites / info
 # =========================
